@@ -178,6 +178,20 @@ def init_db():
             hash TEXT UNIQUE,
             FOREIGN KEY(aircraft_id) REFERENCES aircraft_monitoring(id)
         );
+        CREATE TABLE IF NOT EXISTS sync_status (
+            list_name TEXT PRIMARY KEY,
+            last_synced TEXT,
+            record_count INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'never'
+        );
+        CREATE TABLE IF NOT EXISTS sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            records_synced INTEGER DEFAULT 0,
+            message TEXT,
+            synced_at TEXT DEFAULT (datetime('now'))
+        );
     """)
     _migrate_users(cur)
     _seed_demo_data(cur)
@@ -572,6 +586,7 @@ from billing import billing_bp, subscription_active, get_subscription
 from monitoring import monitoring_bp, start_monitoring_thread
 from vessel_tracking import vessel_bp, start_vessel_thread
 from aircraft_tracking import aircraft_bp, start_aircraft_thread
+from sanctions_sync import sync_bp, start_sync_thread, screen_pep
 
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
@@ -581,6 +596,7 @@ app.register_blueprint(billing_bp)
 app.register_blueprint(monitoring_bp)
 app.register_blueprint(vessel_bp)
 app.register_blueprint(aircraft_bp)
+app.register_blueprint(sync_bp)
 
 @app.context_processor
 def inject_now():
@@ -610,6 +626,7 @@ def create_app():
     start_monitoring_thread()
     start_vessel_thread()
     start_aircraft_thread()
+    start_sync_thread()
     return app
 
 if __name__ == "__main__":

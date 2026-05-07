@@ -263,6 +263,9 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
     <button class="nav-item" onclick="showPage('countries')">
       <span class="nav-icon">🌍</span> Country Risk
     </button>
+    <button class="nav-item" onclick="showPage('datasources')">
+      <span class="nav-icon">🔄</span> Data Sources
+    </button>
     <div class="nav-section">Account</div>
     <a class="nav-item" href="/pricing">
       <span class="nav-icon">💳</span> Billing
@@ -377,6 +380,7 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
         </div>
       </div>
       <div id="screen-results"></div>
+      <div id="pep-results" style="margin-top:16px"></div>
       <div style="margin-top:24px">
         <div class="section-header"><span class="section-title">Recent Screens</span></div>
         <div id="screen-history-list"></div>
@@ -479,6 +483,28 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
         <div class="card" style="padding:0">
           <div id="hits-list"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Data Sources ── -->
+    <div id="page-datasources" class="page">
+      <div class="section-header">
+        <span class="section-title">Data Sources &amp; Sync</span>
+        <button class="btn btn-primary btn-sm" onclick="triggerSync()">↻ Sync Now</button>
+      </div>
+      <div class="two-col" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Sanctions Lists</div><div class="card-subtitle">Auto-synced every 24 hours</div></div>
+          <div id="sync-status-list"><div style="color:var(--text3);font-size:13px">Loading…</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">PEP Screening</div><div class="card-subtitle">Politically Exposed Persons via OpenSanctions</div></div>
+          <div id="pep-status-card"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Recent Sync Log</div></div>
+        <div id="sync-log-list" style="font-size:12px;color:var(--text2)">Loading…</div>
       </div>
     </div>
 
@@ -744,7 +770,7 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',vessels:'Vessel Tracking (AIS)',aircraft:'Aircraft Tracking (ADS-B)',entities:'Sanctions Lists',countries:'Country Risk'};
+  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',vessels:'Vessel Tracking (AIS)',aircraft:'Aircraft Tracking (ADS-B)',datasources:'Data Sources & Sync',entities:'Sanctions Lists',countries:'Country Risk'};
   document.getElementById('topbar-title').textContent = titles[name] || name;
   // Activate nav item
   document.querySelectorAll('.nav-item').forEach(n => {
@@ -756,6 +782,7 @@ function showPage(name) {
   if (name === 'monitoring') loadMonitoring();
   if (name === 'vessels') loadVessels();
   if (name === 'aircraft') loadAircraft();
+  if (name === 'datasources') loadDataSources();
   if (name === 'entities') loadEntities();
   if (name === 'countries') loadCountries();
   if (name === 'screen') loadScreenHistory();
@@ -839,33 +866,165 @@ async function loadDashboard() {
 async function doScreen() {
   const q = document.getElementById('screen-query').value.trim();
   if (!q) return;
-  const el = document.getElementById('screen-results');
-  el.innerHTML = '<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening against global sanctions lists…</div>';
-  const res = await fetch('/api/screen', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json());
-  if (res.error) { el.innerHTML = `<div class="empty-state">${res.error}</div>`; return; }
-  if (!res.results.length) {
-    el.innerHTML = `<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:20px;display:flex;align-items:center;gap:12px;margin-bottom:16px"><span style="font-size:24px">✅</span><div><div style="font-size:14px;font-weight:700;color:var(--green)">No Matches Found</div><div style="font-size:12px;color:var(--text2);margin-top:3px">Query "<strong>${esc(q)}</strong>" returned no hits across OFAC SDN, EU Consolidated, UNSC, and UK FCDO lists.</div></div></div>`;
-    loadScreenHistory(); return;
-  }
-  const badgeClass = {
-    'OFAC SDN':'badge-ofac','EU Consolidated':'badge-eu','UNSC':'badge-un','UK FCDO':'badge-uk'
-  };
-  el.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><span style="font-size:20px">⚠️</span><div><div style="font-size:14px;font-weight:700;color:var(--red)">${res.hits} Match${res.hits>1?'es':''} Found</div><div style="font-size:12px;color:var(--text2)">"${esc(q)}" — Immediate review required</div></div></div>` +
-    res.results.map(r => `
-      <div class="result-card hit">
-        <span class="result-badge ${badgeClass[r.list_name]||'badge-ofac'}">${esc(r.list_name)}</span>
-        <div style="flex:1">
-          <div class="result-name">${esc(r.name)}</div>
-          <div class="result-meta">
-            <span>🗺 ${esc(r.country)}</span>
-            <span>📋 ${esc(r.program)}</span>
-            <span>📅 ${r.designation_date}</span>
-            <span>${r.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</span>
+  const el    = document.getElementById('screen-results');
+  const pepEl = document.getElementById('pep-results');
+  el.innerHTML    = '<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening against global sanctions lists…</div>';
+  pepEl.innerHTML = '<div style="padding:12px 0;font-size:12px;color:var(--text3)"><span class="spinner"></span> Checking PEP database…</div>';
+
+  // Run sanctions + PEP in parallel
+  const [res, pepRes] = await Promise.all([
+    fetch('/api/screen', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json()),
+    fetch('/api/pep/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json()),
+  ]);
+
+  // ── Sanctions results ──
+  if (res.error) { el.innerHTML = `<div class="empty-state">${res.error}</div>`; }
+  else if (!res.results.length) {
+    el.innerHTML = `<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:20px;display:flex;align-items:center;gap:12px"><span style="font-size:24px">✅</span><div><div style="font-size:14px;font-weight:700;color:var(--green)">No Sanctions Matches</div><div style="font-size:12px;color:var(--text2);margin-top:3px">"<strong>${esc(q)}</strong>" returned no hits across OFAC SDN, EU, UNSC, and UK OFSI.</div></div></div>`;
+  } else {
+    const badgeClass = {'OFAC SDN':'badge-ofac','EU Consolidated':'badge-eu','UNSC':'badge-un','UK OFSI':'badge-uk','UK FCDO':'badge-uk'};
+    el.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><span style="font-size:20px">⚠️</span><div><div style="font-size:14px;font-weight:700;color:var(--red)">${res.hits} Sanctions Match${res.hits>1?'es':''} Found</div><div style="font-size:12px;color:var(--text2)">"${esc(q)}" — Immediate review required</div></div></div>` +
+      res.results.map(r => `
+        <div class="result-card hit">
+          <span class="result-badge ${badgeClass[r.list_name]||'badge-ofac'}">${esc(r.list_name)}</span>
+          <div style="flex:1">
+            <div class="result-name">${esc(r.name)}</div>
+            <div class="result-meta">
+              <span>🗺 ${esc(r.country)}</span><span>📋 ${esc(r.program)}</span>
+              <span>📅 ${r.designation_date}</span>
+              <span>${r.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</span>
+            </div>
+            ${r.aliases.length ? `<div class="result-aliases">Also known as: ${r.aliases.map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a)}</span>`).join('')}</div>` : ''}
           </div>
-          ${r.aliases.length ? `<div class="result-aliases">Also known as: ${r.aliases.map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a)}</span>`).join('')}</div>` : ''}
-        </div>
-      </div>`).join('');
+        </div>`).join('');
+  }
+
+  // ── PEP results ──
+  renderPepResults(pepEl, pepRes, q);
   loadScreenHistory();
+}
+
+function renderPepResults(el, pepRes, q) {
+  if (!pepRes || pepRes.error) { el.innerHTML = ''; return; }
+
+  const apiErr = (pepRes.results || []).find(r => r.error);
+  if (apiErr) {
+    el.innerHTML = `<div style="background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--text3)">
+      ⚠ PEP check: ${esc(apiErr.message || 'OpenSanctions API unavailable')}
+      ${apiErr.error==='api_key_required'?'— set <code>OPENSANCTIONS_API_KEY</code> in Render env vars':''}
+    </div>`;
+    return;
+  }
+
+  const hits = (pepRes.results || []).filter(r => !r.error);
+  if (!hits.length) {
+    el.innerHTML = `<div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--text3)">✅ No PEP matches found for "${esc(q)}"</div>`;
+    return;
+  }
+
+  el.innerHTML = `<div style="margin-bottom:10px">
+    <div style="background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.3);border-radius:8px;padding:14px 18px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:20px">🏛</span>
+      <div><div style="font-size:14px;font-weight:700;color:var(--yellow)">${hits.length} PEP Match${hits.length>1?'es':''} Found</div>
+      <div style="font-size:12px;color:var(--text2)">Politically Exposed Person — enhanced due diligence required</div></div>
+    </div></div>` +
+    hits.map(p => `
+    <div class="result-card" style="border-left:3px solid var(--yellow)">
+      <span class="result-badge" style="background:rgba(234,179,8,.2);color:var(--yellow);flex-shrink:0">PEP</span>
+      <div style="flex:1">
+        <div class="result-name">${esc(p.name)}</div>
+        ${p.position ? `<div style="font-size:12px;color:var(--text2);margin-bottom:4px">🏛 ${esc(p.position)}</div>` : ''}
+        <div class="result-meta">
+          ${p.nationality ? `<span>🌍 ${esc(p.nationality)}</span>` : ''}
+          ${p.birth_date  ? `<span>📅 b. ${esc(p.birth_date)}</span>` : ''}
+          ${p.topics      ? `<span>🏷 ${esc(p.topics)}</span>` : ''}
+          ${p.datasets    ? `<span style="color:var(--text3)">📂 ${esc(p.datasets)}</span>` : ''}
+        </div>
+        ${p.aliases ? `<div class="result-aliases">Also known as: ${p.aliases.split(';').slice(0,4).map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a.trim())}</span>`).join('')}</div>` : ''}
+        ${p.url ? `<div style="margin-top:5px"><a href="${esc(p.url)}" target="_blank" style="font-size:11px;color:var(--accent)">View on OpenSanctions →</a></div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ─── Data Sources ─────────────────────────────────────────────────────────────
+async function loadDataSources() {
+  const data = await fetch('/api/sync/status').then(r => r.json());
+
+  // Sync status table
+  const statusEl = document.getElementById('sync-status-list');
+  const byList   = Object.fromEntries((data.sanctions_by_list || []).map(r => [r.list_name, r.cnt]));
+  const statuses = data.sync_status || [];
+
+  const lists = ['OFAC SDN','EU Consolidated','UNSC','UK OFSI'];
+  const sourceUrls = {
+    'OFAC SDN':        'https://home.treasury.gov/policy-issues/financial-sanctions/specially-designated-nationals-and-blocked-persons-list-sdn-human-readable-lists',
+    'EU Consolidated': 'https://webgate.ec.europa.eu/fsd/fsf/',
+    'UNSC':            'https://www.un.org/securitycouncil/content/un-sc-consolidated-list',
+    'UK OFSI':         'https://www.gov.uk/government/publications/the-uk-sanctions-list',
+  };
+
+  statusEl.innerHTML = lists.map(name => {
+    const s = statuses.find(x => x.list_name === name) || {};
+    const count = byList[name] || 0;
+    const ok    = s.status === 'ok';
+    const never = !s.last_synced;
+    const statusDot = never ? '⬜' : ok ? '🟢' : '🔴';
+    const lastSync  = never ? 'Never synced' : `Synced ${relTime(s.last_synced)}`;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:14px">${statusDot}</span>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600">${esc(name)}</div>
+        <div style="font-size:11px;color:var(--text3)">${lastSync}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">${count.toLocaleString()}</div>
+        <div style="font-size:10px;color:var(--text3)">records</div>
+      </div>
+      <a href="${sourceUrls[name]}" target="_blank" style="font-size:11px;color:var(--accent);white-space:nowrap">Source →</a>
+    </div>`;
+  }).join('');
+
+  // PEP status card
+  const pepEl = document.getElementById('pep-status-card');
+  pepEl.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:14px">${data.pep_api_enabled ? '🟢' : '🟡'}</span>
+        <span style="font-size:13px;font-weight:600">OpenSanctions API</span>
+        <span style="font-size:11px;padding:1px 7px;border-radius:4px;background:${data.pep_api_enabled ? 'rgba(34,197,94,.15)' : 'rgba(234,179,8,.15)'};color:${data.pep_api_enabled ? 'var(--green)' : 'var(--yellow)'}">
+          ${data.pep_api_enabled ? 'API key set' : 'Free tier (rate-limited)'}
+        </span>
+      </div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">
+        PEP checks run live against the OpenSanctions database (1.2M+ politically exposed persons).
+        ${data.pep_api_enabled
+          ? 'Full API access enabled.'
+          : 'Free tier: ~100 searches/day. Set <code style="background:var(--surface3);padding:1px 5px;border-radius:3px">OPENSANCTIONS_API_KEY</code> in Render env vars for unlimited access.'}
+      </div>
+    </div>
+    <a href="https://www.opensanctions.org/api/" target="_blank" style="font-size:12px;color:var(--accent)">Get an API key →</a>`;
+
+  // Sync log
+  const logEl = document.getElementById('sync-log-list');
+  const log   = data.log || [];
+  if (!log.length) { logEl.innerHTML = '<div style="color:var(--text3);padding:8px 0">No sync history yet — first sync runs 30 seconds after startup.</div>'; return; }
+  logEl.innerHTML = `<table style="width:100%">
+    <thead><tr><th>List</th><th>Status</th><th>Records</th><th>Time</th><th>Message</th></tr></thead>
+    <tbody>${log.map(r => `<tr>
+      <td style="font-weight:600">${esc(r.list_name)}</td>
+      <td><span style="color:${r.status==='ok'?'var(--green)':'var(--red)'}">${r.status==='ok'?'✓ OK':'✗ Error'}</span></td>
+      <td>${(r.records_synced||0).toLocaleString()}</td>
+      <td style="color:var(--text3)">${relTime(r.synced_at)}</td>
+      <td style="color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.message||'')}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function triggerSync() {
+  showToast('Sync started — this takes ~1–2 minutes…');
+  await fetch('/api/sync/run', {method:'POST'});
+  setTimeout(loadDataSources, 5000);
+  setTimeout(loadDataSources, 90000);
 }
 
 async function loadScreenHistory() {
