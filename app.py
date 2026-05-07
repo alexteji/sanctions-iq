@@ -98,6 +98,31 @@ def init_db():
             trial_ends_at TEXT,
             subscription_ends_at TEXT
         );
+        CREATE TABLE IF NOT EXISTS monitoring_list (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            entity_type TEXT DEFAULT 'individual',
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            last_checked TEXT,
+            last_alert_sent TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS monitoring_hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            monitoring_id INTEGER NOT NULL,
+            hit_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            source TEXT,
+            url TEXT,
+            found_at TEXT DEFAULT (datetime('now')),
+            notified INTEGER DEFAULT 0,
+            hash TEXT UNIQUE,
+            FOREIGN KEY(monitoring_id) REFERENCES monitoring_list(id)
+        );
     """)
     _migrate_users(cur)
     _seed_demo_data(cur)
@@ -489,12 +514,14 @@ def api_me():
 
 from auth import auth_bp, login_manager
 from billing import billing_bp, subscription_active, get_subscription
+from monitoring import monitoring_bp, start_monitoring_thread
 
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
 login_manager.login_message = None
 app.register_blueprint(auth_bp)
 app.register_blueprint(billing_bp)
+app.register_blueprint(monitoring_bp)
 
 @app.context_processor
 def inject_now():
@@ -521,6 +548,7 @@ def create_app():
     init_db()
     bg = threading.Thread(target=_background_refresh, daemon=True)
     bg.start()
+    start_monitoring_thread()
     return app
 
 if __name__ == "__main__":
