@@ -606,7 +606,8 @@ def inject_now():
 def enforce_subscription():
     """Block API calls and dashboard for users with no active subscription."""
     exempt_prefixes = ("/login", "/logout", "/register", "/forgot-password",
-                       "/reset-password", "/pricing", "/billing", "/static")
+                       "/reset-password", "/pricing", "/billing", "/static",
+                       "/api/auth")
     if any(request.path.startswith(p) for p in exempt_prefixes):
         return
     if not current_user.is_authenticated:

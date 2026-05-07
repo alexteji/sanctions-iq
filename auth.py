@@ -52,6 +52,9 @@ def load_user(user_id):
 
 @login_manager.unauthorized_handler
 def unauthorized():
+    if request.path.startswith("/api/"):
+        from flask import jsonify
+        return jsonify({"error": "unauthorized"}), 401
     return redirect(url_for("auth.login", next=request.path))
 
 # ─── Token helpers ───────────────────────────────────────────────────────────
@@ -200,6 +203,39 @@ def forgot_password():
         # Always show success to prevent email enumeration
         sent = True
     return render_template("forgot_password.html", sent=sent, dev_url=dev_url)
+
+@auth_bp.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    from flask import jsonify
+    data = request.get_json(force=True)
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password", "")
+    row = User.get_by_email(email)
+    if row and check_password_hash(row["password_hash"], password):
+        user = User(row["id"], row["email"], row["name"], row["role"])
+        login_user(user, remember=True)
+        return jsonify({"ok": True, "user": {
+            "id": user.id, "email": user.email,
+            "name": user.name, "role": user.role,
+        }})
+    return jsonify({"ok": False, "error": "Invalid email or password"}), 401
+
+@auth_bp.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    from flask import jsonify
+    logout_user()
+    return jsonify({"ok": True})
+
+@auth_bp.route("/api/auth/me", methods=["GET"])
+@login_required
+def api_auth_me():
+    from flask import jsonify
+    return jsonify({
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "role": current_user.role,
+    })
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
