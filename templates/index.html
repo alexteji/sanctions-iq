@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SanctionsIQ — Global Compliance Monitor</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--surface3:#222840;
+  --border:#2a3050;--accent:#3b82f6;--accent2:#6366f1;--accent3:#10b981;
+  --red:#ef4444;--orange:#f97316;--yellow:#eab308;--green:#22c55e;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+  --critical:#ef4444;--high:#f97316;--medium:#eab308;--low:#3b82f6;
+  --radius:10px;--shadow:0 4px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* ── Sidebar ── */
+#sidebar{width:220px;min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:100}
+.sidebar-logo{padding:20px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sidebar-logo .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.sidebar-logo .logo-text{font-size:15px;font-weight:700;letter-spacing:-.3px}
+.sidebar-logo .logo-sub{font-size:10px;color:var(--text3);margin-top:2px}
+nav{flex:1;padding:12px 8px}
+.nav-section{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;padding:14px 10px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text2);transition:all .15s;margin-bottom:2px;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:rgba(59,130,246,.15);color:var(--accent);font-weight:600}
+.nav-item .nav-icon{font-size:15px;width:20px;text-align:center}
+.nav-badge{margin-left:auto;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+.sidebar-footer{padding:14px;border-top:1px solid var(--border)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:6px;box-shadow:0 0 6px var(--green)}
+.status-text{font-size:11px;color:var(--text3)}
+
+/* ── Main ── */
+#main{margin-left:220px;flex:1;display:flex;flex-direction:column;min-height:100vh}
+#topbar{height:58px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:12px;position:sticky;top:0;z-index:50}
+.topbar-title{font-size:16px;font-weight:600;flex:1}
+.topbar-time{font-size:12px;color:var(--text3);margin-right:4px}
+.btn{padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#2563eb}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#dc2626}
+
+#content{padding:24px;flex:1}
+.page{display:none}
+.page.active{display:block}
+
+/* ── Cards ── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;color:var(--text)}
+.card-subtitle{font-size:12px;color:var(--text3);margin-top:2px}
+
+/* ── Stat Cards ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.stat-card.blue::before{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.stat-card.red::before{background:linear-gradient(90deg,var(--red),#ff6b6b)}
+.stat-card.green::before{background:linear-gradient(90deg,var(--green),var(--accent3))}
+.stat-card.orange::before{background:linear-gradient(90deg,var(--orange),var(--yellow))}
+.stat-card.purple::before{background:linear-gradient(90deg,var(--accent2),#a855f7)}
+.stat-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:8px}
+.stat-value{font-size:28px;font-weight:700;color:var(--text);line-height:1}
+.stat-sub{font-size:11px;color:var(--text3);margin-top:5px}
+
+/* ── Screen Tool ── */
+.screen-box{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px}
+.screen-input-row{display:flex;gap:10px}
+.screen-input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:10px 14px;color:var(--text);font-size:14px;outline:none;transition:border .15s}
+.screen-input:focus{border-color:var(--accent)}
+.screen-filters{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.filter-chip{background:var(--surface3);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:11px;cursor:pointer;color:var(--text2);transition:all .15s}
+.filter-chip.active{background:rgba(59,130,246,.2);border-color:var(--accent);color:var(--accent)}
+
+/* ── Results ── */
+.result-card{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:14px}
+.result-card.hit{border-left:3px solid var(--red)}
+.result-badge{padding:3px 9px;border-radius:5px;font-size:10px;font-weight:700;text-transform:uppercase;flex-shrink:0}
+.badge-ofac{background:rgba(239,68,68,.2);color:var(--red)}
+.badge-eu{background:rgba(99,102,241,.2);color:#818cf8}
+.badge-un{background:rgba(234,179,8,.2);color:var(--yellow)}
+.badge-uk{background:rgba(16,185,129,.2);color:var(--accent3)}
+.result-name{font-size:14px;font-weight:600;margin-bottom:4px}
+.result-meta{font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap}
+.result-aliases{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ── Alerts ── */
+.alert-item{display:flex;align-items:flex-start;gap:12px;padding:14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.alert-item:hover{background:var(--surface2)}
+.alert-item.unread{background:rgba(59,130,246,.04)}
+.alert-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.dot-high{background:var(--red)}
+.dot-medium{background:var(--orange)}
+.dot-low{background:var(--accent)}
+.alert-title{font-size:13px;font-weight:600;margin-bottom:3px}
+.alert-item.unread .alert-title{font-weight:700}
+.alert-body{font-size:12px;color:var(--text2);margin-bottom:4px;line-height:1.5}
+.alert-meta{font-size:11px;color:var(--text3);display:flex;gap:10px}
+.severity-tag{padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700}
+.sev-high{background:rgba(239,68,68,.2);color:var(--red)}
+.sev-medium{background:rgba(249,115,22,.2);color:var(--orange)}
+.sev-low{background:rgba(59,130,246,.2);color:var(--accent)}
+
+/* ── News ── */
+.news-item{padding:14px;border-bottom:1px solid var(--border)}
+.news-item:last-child{border-bottom:none}
+.news-source{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent3);margin-bottom:4px}
+.news-title{font-size:13px;font-weight:600;line-height:1.4;margin-bottom:5px}
+.news-summary{font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:6px}
+.news-time{font-size:11px;color:var(--text3)}
+
+/* ── Watchlist ── */
+.wl-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.wl-item:hover{background:var(--surface2)}
+.wl-avatar{width:36px;height:36px;border-radius:8px;background:var(--surface3);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.wl-name{font-size:13px;font-weight:600}
+.wl-type{font-size:11px;color:var(--text3);margin-top:1px}
+.wl-hits{margin-left:auto;text-align:right}
+.hit-count{font-size:18px;font-weight:700;color:var(--red)}
+.hit-label{font-size:10px;color:var(--text3)}
+.hit-count.zero{color:var(--text3)}
+
+/* ── Grid layouts ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+@media(max-width:900px){.two-col,.three-col{grid-template-columns:1fr}}
+
+/* ── Entities table ── */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:8px 12px;border-bottom:1px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover td{background:var(--surface2)}
+.country-flag{margin-right:5px}
+.risk-pill{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase}
+.risk-critical{background:rgba(239,68,68,.2);color:var(--red)}
+.risk-high{background:rgba(249,115,22,.2);color:var(--orange)}
+.risk-medium{background:rgba(234,179,8,.2);color:var(--yellow)}
+.risk-low{background:rgba(59,130,246,.2);color:var(--accent)}
+
+/* ── Misc ── */
+.empty-state{text-align:center;padding:48px;color:var(--text3)}
+.empty-state .empty-icon{font-size:40px;margin-bottom:12px}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;margin-right:3px}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 18px;font-size:13px;box-shadow:var(--shadow);z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s}
+.toast.show{transform:translateY(0);opacity:1}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-title{font-size:15px;font-weight:700}
+.refresh-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--text3);padding:5px 10px;cursor:pointer;font-size:12px;transition:all .15s}
+.refresh-btn:hover{background:var(--surface2);color:var(--text)}
+input[type=text],select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:9px 12px;color:var(--text);font-size:13px;outline:none;width:100%}
+input[type=text]:focus,select:focus,textarea:focus{border-color:var(--accent)}
+select option{background:var(--surface2)}
+.form-group{margin-bottom:14px}
+label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:5px}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-backdrop.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:420px;max-width:95vw;padding:24px;box-shadow:var(--shadow)}
+.modal-title{font-size:15px;font-weight:700;margin-bottom:16px}
+.modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+.chart-wrap{position:relative;height:200px}
+
+/* Live pulse */
+.live-indicator{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text3)}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}50%{box-shadow:0 0 0 5px rgba(34,197,94,0)}}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">⚖</div>
+    <div>
+      <div class="logo-text">SanctionsIQ</div>
+      <div class="logo-sub">Compliance Monitor</div>
+    </div>
+  </div>
+  <nav>
+    <div class="nav-section">Monitor</div>
+    <button class="nav-item active" onclick="showPage('dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="showPage('screen')">
+      <span class="nav-icon">🔍</span> Entity Screening
+    </button>
+    <button class="nav-item" onclick="showPage('alerts')">
+      <span class="nav-icon">🔔</span> Alerts
+      <span class="nav-badge" id="alert-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-item" onclick="showPage('news')">
+      <span class="nav-icon">📰</span> Live News Feed
+    </button>
+    <div class="nav-section">Management</div>
+    <button class="nav-item" onclick="showPage('watchlist')">
+      <span class="nav-icon">👁</span> Watchlist
+    </button>
+    <button class="nav-item" onclick="showPage('entities')">
+      <span class="nav-icon">🗃</span> Sanctions Lists
+    </button>
+    <button class="nav-item" onclick="showPage('countries')">
+      <span class="nav-icon">🌍</span> Country Risk
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <span class="status-dot"></span>
+    <span class="status-text" id="sidebar-status">Live Monitoring Active</span>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <div id="topbar">
+    <span class="topbar-title" id="topbar-title">Dashboard</span>
+    <div class="live-indicator"><span class="pulse"></span>Live</div>
+    <span class="topbar-time" id="topbar-time"></span>
+    <button class="btn btn-ghost btn-sm" onclick="refreshAll()">↻ Refresh</button>
+    <div style="display:flex;align-items:center;gap:8px;margin-left:4px;padding-left:12px;border-left:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0">
+        {{ user.name[0].upper() if user.name else '?' }}
+      </div>
+      <div style="display:flex;flex-direction:column;line-height:1.2">
+        <span style="font-size:12px;font-weight:600;color:var(--text)">{{ user.name }}</span>
+        <span style="font-size:10px;color:var(--text3);text-transform:capitalize">{{ user.role }}</span>
+      </div>
+      <a href="/logout" style="margin-left:4px;font-size:11px;color:var(--text3);text-decoration:none;padding:4px 8px;border-radius:5px;border:1px solid var(--border)" title="Sign out">⏻</a>
+    </div>
+  </div>
+  <div id="content">
+
+    <!-- ── Dashboard ── -->
+    <div id="page-dashboard" class="page active">
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card blue"><div class="stat-label">Sanctioned Entities</div><div class="stat-value" id="s-entities">—</div><div class="stat-sub">Across all lists</div></div>
+        <div class="stat-card red"><div class="stat-label">Unread Alerts</div><div class="stat-value" id="s-alerts">—</div><div class="stat-sub">Action required</div></div>
+        <div class="stat-card orange"><div class="stat-label">Watchlist Items</div><div class="stat-value" id="s-watchlist">—</div><div class="stat-sub">Under monitoring</div></div>
+        <div class="stat-card green"><div class="stat-label">Screens Today</div><div class="stat-value" id="s-screens">—</div><div class="stat-sub">Entity checks run</div></div>
+        <div class="stat-card purple"><div class="stat-label">News Items</div><div class="stat-value" id="s-news">—</div><div class="stat-sub">In feed cache</div></div>
+      </div>
+
+      <div class="two-col" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Sanctions by List</div><div class="card-subtitle">Entity count per sanctions regime</div></div>
+          </div>
+          <div class="chart-wrap"><canvas id="chart-lists"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Recent Alerts</div><div class="card-subtitle">Latest compliance events</div></div>
+            <button class="btn btn-ghost btn-sm" onclick="showPage('alerts')">View All →</button>
+          </div>
+          <div id="dash-alerts"></div>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Watchlist Status</div><div class="card-subtitle">Monitored entities vs sanctions hits</div></div>
+            <button class="btn btn-ghost btn-sm" onclick="showPage('watchlist')">Manage →</button>
+          </div>
+          <div id="dash-watchlist"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Top Risk Countries</div><div class="card-subtitle">By sanctioned entity count</div></div>
+          </div>
+          <div id="dash-countries"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Screening ── -->
+    <div id="page-screen" class="page">
+      <div class="screen-box">
+        <div class="card-header" style="margin-bottom:12px">
+          <div><div class="card-title">Entity Screening</div><div class="card-subtitle">Screen individuals and entities against global sanctions lists</div></div>
+        </div>
+        <div class="screen-input-row">
+          <input class="screen-input" id="screen-query" type="text" placeholder="Enter name, company, alias… e.g. 'Rosneft' or 'Putin'" onkeydown="if(event.key==='Enter')doScreen()"/>
+          <button class="btn btn-primary" onclick="doScreen()">Screen</button>
+        </div>
+        <div class="screen-filters">
+          <span style="font-size:12px;color:var(--text3);padding:4px 0">Lists:</span>
+          <span class="filter-chip active" data-list="ofac">OFAC SDN</span>
+          <span class="filter-chip active" data-list="eu">EU Consolidated</span>
+          <span class="filter-chip active" data-list="un">UN Security Council</span>
+          <span class="filter-chip active" data-list="uk">UK FCDO</span>
+        </div>
+      </div>
+      <div id="screen-results"></div>
+      <div style="margin-top:24px">
+        <div class="section-header"><span class="section-title">Recent Screens</span></div>
+        <div id="screen-history-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Alerts ── -->
+    <div id="page-alerts" class="page">
+      <div class="section-header">
+        <span class="section-title">Compliance Alerts</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="markAllRead()">Mark All Read</button>
+          <button class="refresh-btn" onclick="loadAlerts()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <div id="alerts-list"></div>
+      </div>
+    </div>
+
+    <!-- ── News ── -->
+    <div id="page-news" class="page">
+      <div class="section-header">
+        <span class="section-title">Live Sanctions &amp; Compliance News</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="live-indicator"><span class="pulse"></span>Updating every 10 min</div>
+          <button class="refresh-btn" onclick="refreshNews()">↻ Fetch Latest</button>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="card" style="padding:0"><div id="news-list"></div></div>
+        <div>
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-header"><div class="card-title">Monitored Sources</div></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                <div><div style="font-size:13px;font-weight:600">OFAC Treasury</div><div style="font-size:11px;color:var(--text3)">home.treasury.gov</div></div>
+                <span style="color:var(--green);font-size:11px">● Active</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                <div><div style="font-size:13px;font-weight:600">EU Council Sanctions</div><div style="font-size:11px;color:var(--text3)">consilium.europa.eu</div></div>
+                <span style="color:var(--green);font-size:11px">● Active</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">
+                <div><div style="font-size:13px;font-weight:600">Reuters Business</div><div style="font-size:11px;color:var(--text3)">reuters.com/business</div></div>
+                <span style="color:var(--green);font-size:11px">● Active</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0">
+                <div><div style="font-size:13px;font-weight:600">UN Security Council</div><div style="font-size:11px;color:var(--text3)">un.org/securitycouncil</div></div>
+                <span style="color:var(--green);font-size:11px">● Active</span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div class="card-title">Keyword Filters</div></div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <span class="filter-chip active">Sanctions</span>
+              <span class="filter-chip active">OFAC</span>
+              <span class="filter-chip active">Designation</span>
+              <span class="filter-chip active">AML</span>
+              <span class="filter-chip active">Compliance</span>
+              <span class="filter-chip active">Terror Finance</span>
+              <span class="filter-chip active">Export Control</span>
+              <span class="filter-chip active">Money Laundering</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Watchlist ── -->
+    <div id="page-watchlist" class="page">
+      <div class="section-header">
+        <span class="section-title">Watchlist</span>
+        <button class="btn btn-primary btn-sm" onclick="openAddWatchlist()">+ Add Entity</button>
+      </div>
+      <div class="card" style="padding:0">
+        <div id="watchlist-list"></div>
+      </div>
+    </div>
+
+    <!-- ── Entities ── -->
+    <div id="page-entities" class="page">
+      <div class="section-header">
+        <span class="section-title">Sanctions Lists Database</span>
+        <div style="display:flex;gap:8px">
+          <select id="filter-list" onchange="loadEntities()" style="width:160px">
+            <option value="">All Lists</option>
+            <option value="OFAC SDN">OFAC SDN</option>
+            <option value="EU Consolidated">EU Consolidated</option>
+            <option value="UNSC">UNSC</option>
+            <option value="UK FCDO">UK FCDO</option>
+          </select>
+          <select id="filter-type" onchange="loadEntities()" style="width:140px">
+            <option value="">All Types</option>
+            <option value="individual">Individual</option>
+            <option value="entity">Entity</option>
+          </select>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:auto">
+        <table>
+          <thead><tr>
+            <th>Name</th><th>List</th><th>Type</th><th>Country</th><th>Program</th><th>Designated</th>
+          </tr></thead>
+          <tbody id="entities-tbody"></tbody>
+        </table>
+        <div id="entities-pagination" style="padding:14px;display:flex;gap:8px;justify-content:flex-end"></div>
+      </div>
+    </div>
+
+    <!-- ── Country Risk ── -->
+    <div id="page-countries" class="page">
+      <div class="section-header"><span class="section-title">Country Risk Overview</span></div>
+      <div class="two-col" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><div class="card-title">Sanctioned Entities by Country</div></div>
+          <div class="chart-wrap" style="height:280px"><canvas id="chart-countries"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div class="card-title">Risk Level Legend</div></div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:10px"><span class="risk-pill risk-critical">Critical</span><span style="font-size:12px;color:var(--text2)">Comprehensive sanctions — OFAC, EU, UN, UK</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="risk-pill risk-high">High</span><span style="font-size:12px;color:var(--text2)">Significant sanctions regime in place</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="risk-pill risk-medium">Medium</span><span style="font-size:12px;color:var(--text2)">Targeted designations or FATF grey list</span></div>
+            <div style="display:flex;align-items:center;gap:10px"><span class="risk-pill risk-low">Low</span><span style="font-size:12px;color:var(--text2)">Limited or no current sanctions</span></div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);line-height:1.6">
+            Risk assessments are based on active sanctions designations across OFAC SDN, EU Consolidated, UN Security Council, and UK FCDO lists, combined with FATF monitoring status.
+          </div>
+        </div>
+      </div>
+      <div class="card" style="padding:0">
+        <table>
+          <thead><tr><th>Country</th><th>Sanctioned Entities</th><th>Risk Level</th><th>Primary Regimes</th></tr></thead>
+          <tbody id="countries-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- Add Watchlist Modal -->
+<div class="modal-backdrop" id="modal-watchlist">
+  <div class="modal">
+    <div class="modal-title">Add to Watchlist</div>
+    <div class="form-group">
+      <label>Name or Company</label>
+      <input type="text" id="wl-name" placeholder="e.g. Acme Trading Ltd"/>
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="wl-type">
+        <option value="individual">Individual</option>
+        <option value="entity">Entity / Company</option>
+        <option value="vessel">Vessel</option>
+        <option value="aircraft">Aircraft</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notes (optional)</label>
+      <textarea id="wl-notes" rows="2" placeholder="Internal reference, case number…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-watchlist')">Cancel</button>
+      <button class="btn btn-primary" onclick="addWatchlist()">Add to Watchlist</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ─────────────────────────────────────────────────────────────────
+let chartLists = null, chartCountries = null;
+let entitiesPage = 0, entitiesPageSize = 20;
+
+// ─── Navigation ────────────────────────────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',entities:'Sanctions Lists',countries:'Country Risk'};
+  document.getElementById('topbar-title').textContent = titles[name] || name;
+  // Activate nav item
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.textContent.trim().toLowerCase().includes(name.split(/(?=[A-Z])/)[0].toLowerCase())) n.classList.add('active');
+  });
+  if (name === 'alerts') loadAlerts();
+  if (name === 'news') loadNews();
+  if (name === 'watchlist') loadWatchlist();
+  if (name === 'entities') loadEntities();
+  if (name === 'countries') loadCountries();
+  if (name === 'screen') loadScreenHistory();
+}
+
+// ─── Clock ──────────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('topbar-time').textContent = new Date().toUTCString().replace('GMT','UTC');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ─── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ─── Dashboard ──────────────────────────────────────────────────────────────
+async function loadDashboard() {
+  const [stats, alerts, watchlist, countries] = await Promise.all([
+    fetch('/api/stats').then(r=>r.json()),
+    fetch('/api/alerts?limit=4').then(r=>r.json()),
+    fetch('/api/watchlist').then(r=>r.json()),
+    fetch('/api/countries').then(r=>r.json()),
+  ]);
+
+  document.getElementById('s-entities').textContent = stats.total_sanctioned_entities.toLocaleString();
+  document.getElementById('s-alerts').textContent = stats.unread_alerts;
+  document.getElementById('s-watchlist').textContent = stats.watchlist_count;
+  document.getElementById('s-screens').textContent = stats.screens_today;
+  document.getElementById('s-news').textContent = stats.news_items || '—';
+
+  if (stats.unread_alerts > 0) {
+    const badge = document.getElementById('alert-badge');
+    badge.textContent = stats.unread_alerts;
+    badge.style.display = '';
+  }
+
+  // Chart: by list
+  const labels = stats.by_list.map(x=>x.list);
+  const data = stats.by_list.map(x=>x.count);
+  const colors = ['#ef4444','#6366f1','#eab308','#10b981','#3b82f6'];
+  if (chartLists) chartLists.destroy();
+  chartLists = new Chart(document.getElementById('chart-lists'), {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderColor: '#111520', borderWidth: 3 }] },
+    options: { plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 } } } }, cutout: '65%' }
+  });
+
+  // Dash alerts
+  document.getElementById('dash-alerts').innerHTML = alerts.map(a => `
+    <div class="alert-item ${a.read?'':'unread'}" onclick="markRead(${a.id})">
+      <span class="alert-dot dot-${a.severity==='high'?'high':a.severity==='medium'?'medium':'low'}"></span>
+      <div style="flex:1">
+        <div class="alert-title">${esc(a.title)}</div>
+        <div class="alert-meta"><span class="severity-tag sev-${a.severity}">${a.severity}</span><span>${esc(a.source)}</span><span>${relTime(a.created_at)}</span></div>
+      </div>
+    </div>`).join('');
+
+  // Dash watchlist
+  document.getElementById('dash-watchlist').innerHTML = watchlist.slice(0,5).map(w => `
+    <div class="wl-item">
+      <div class="wl-avatar">${w.entity_type==='entity'?'🏢':w.entity_type==='vessel'?'🚢':'👤'}</div>
+      <div style="flex:1"><div class="wl-name">${esc(w.name)}</div><div class="wl-type">${w.entity_type}</div></div>
+      <div class="wl-hits"><div class="hit-count ${w.sanctions_hits===0?'zero':''}">${w.sanctions_hits}</div><div class="hit-label">hits</div></div>
+    </div>`).join('');
+
+  // Dash countries
+  document.getElementById('dash-countries').innerHTML = countries.slice(0,6).map(c => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;font-size:13px;font-weight:500">${esc(c.country)}</div>
+      <span class="risk-pill risk-${c.risk_level}">${c.risk_level}</span>
+      <span style="font-size:13px;font-weight:600;color:var(--text2);width:30px;text-align:right">${c.count}</span>
+    </div>`).join('');
+}
+
+// ─── Screening ───────────────────────────────────────────────────────────────
+async function doScreen() {
+  const q = document.getElementById('screen-query').value.trim();
+  if (!q) return;
+  const el = document.getElementById('screen-results');
+  el.innerHTML = '<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening against global sanctions lists…</div>';
+  const res = await fetch('/api/screen', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json());
+  if (res.error) { el.innerHTML = `<div class="empty-state">${res.error}</div>`; return; }
+  if (!res.results.length) {
+    el.innerHTML = `<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:20px;display:flex;align-items:center;gap:12px;margin-bottom:16px"><span style="font-size:24px">✅</span><div><div style="font-size:14px;font-weight:700;color:var(--green)">No Matches Found</div><div style="font-size:12px;color:var(--text2);margin-top:3px">Query "<strong>${esc(q)}</strong>" returned no hits across OFAC SDN, EU Consolidated, UNSC, and UK FCDO lists.</div></div></div>`;
+    loadScreenHistory(); return;
+  }
+  const badgeClass = {
+    'OFAC SDN':'badge-ofac','EU Consolidated':'badge-eu','UNSC':'badge-un','UK FCDO':'badge-uk'
+  };
+  el.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><span style="font-size:20px">⚠️</span><div><div style="font-size:14px;font-weight:700;color:var(--red)">${res.hits} Match${res.hits>1?'es':''} Found</div><div style="font-size:12px;color:var(--text2)">"${esc(q)}" — Immediate review required</div></div></div>` +
+    res.results.map(r => `
+      <div class="result-card hit">
+        <span class="result-badge ${badgeClass[r.list_name]||'badge-ofac'}">${esc(r.list_name)}</span>
+        <div style="flex:1">
+          <div class="result-name">${esc(r.name)}</div>
+          <div class="result-meta">
+            <span>🗺 ${esc(r.country)}</span>
+            <span>📋 ${esc(r.program)}</span>
+            <span>📅 ${r.designation_date}</span>
+            <span>${r.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</span>
+          </div>
+          ${r.aliases.length ? `<div class="result-aliases">Also known as: ${r.aliases.map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a)}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>`).join('');
+  loadScreenHistory();
+}
+
+async function loadScreenHistory() {
+  const rows = await fetch('/api/screen-history').then(r=>r.json());
+  const el = document.getElementById('screen-history-list');
+  if (!rows.length) { el.innerHTML = '<div style="color:var(--text3);font-size:13px">No recent screens.</div>'; return; }
+  el.innerHTML = rows.map(r => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="document.getElementById('screen-query').value='${esc(r.query)}';doScreen()">
+      <span style="font-size:12px;color:var(--text3)">🕐</span>
+      <span style="flex:1;font-size:13px">${esc(r.query)}</span>
+      <span style="font-size:11px;color:${r.result_count>0?'var(--red)':'var(--green)'};font-weight:600">${r.result_count} hits</span>
+      <span style="font-size:11px;color:var(--text3)">${relTime(r.screened_at)}</span>
+    </div>`).join('');
+}
+
+// ─── Alerts ──────────────────────────────────────────────────────────────────
+async function loadAlerts() {
+  const alerts = await fetch('/api/alerts').then(r=>r.json());
+  const el = document.getElementById('alerts-list');
+  if (!alerts.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔔</div>No alerts</div>'; return; }
+  el.innerHTML = alerts.map(a => `
+    <div class="alert-item ${a.read?'':'unread'}" onclick="markRead(${a.id})">
+      <span class="alert-dot dot-${a.severity==='high'?'high':a.severity==='medium'?'medium':'low'}"></span>
+      <div style="flex:1">
+        <div class="alert-title">${esc(a.title)}</div>
+        <div class="alert-body">${esc(a.body||'')}</div>
+        <div class="alert-meta">
+          <span class="severity-tag sev-${a.severity}">${a.severity.toUpperCase()}</span>
+          <span>📡 ${esc(a.source)}</span>
+          <span>🕐 ${relTime(a.created_at)}</span>
+          ${a.url ? `<a href="${esc(a.url)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px">View Source →</a>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+  updateAlertBadge(alerts);
+}
+
+async function markRead(id) {
+  await fetch(`/api/alerts/${id}/read`, {method:'POST'});
+  loadAlerts();
+}
+
+async function markAllRead() {
+  await fetch('/api/alerts/read-all', {method:'POST'});
+  document.getElementById('alert-badge').style.display = 'none';
+  loadAlerts();
+  showToast('All alerts marked as read');
+}
+
+function updateAlertBadge(alerts) {
+  const unread = alerts.filter(a=>!a.read).length;
+  const badge = document.getElementById('alert-badge');
+  if (unread > 0) { badge.textContent = unread; badge.style.display = ''; }
+  else badge.style.display = 'none';
+}
+
+// ─── News ─────────────────────────────────────────────────────────────────────
+async function loadNews() {
+  const news = await fetch('/api/news').then(r=>r.json());
+  const el = document.getElementById('news-list');
+  if (!news.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div>No news items yet. Click Fetch Latest.</div>'; return; }
+  el.innerHTML = news.map(n => `
+    <div class="news-item">
+      <div class="news-source">${esc(n.source)}</div>
+      <div class="news-title">${n.url ? `<a href="${esc(n.url)}" target="_blank" style="color:var(--text)">${esc(n.title)}</a>` : esc(n.title)}</div>
+      <div class="news-summary">${esc(n.summary||'').substring(0,200)}${(n.summary||'').length>200?'…':''}</div>
+      <div class="news-time">${relTime(n.published||n.fetched_at)}</div>
+    </div>`).join('');
+}
+
+async function refreshNews() {
+  showToast('Fetching latest news…');
+  const r = await fetch('/api/refresh-news', {method:'POST'}).then(r=>r.json());
+  showToast(`Fetched ${r.new_items} new item${r.new_items!==1?'s':''}`);
+  loadNews();
+}
+
+// ─── Watchlist ────────────────────────────────────────────────────────────────
+async function loadWatchlist() {
+  const items = await fetch('/api/watchlist').then(r=>r.json());
+  const el = document.getElementById('watchlist-list');
+  if (!items.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">👁</div>Watchlist empty. Add entities to monitor.</div>'; return; }
+  el.innerHTML = items.map(w => `
+    <div class="wl-item">
+      <div class="wl-avatar">${w.entity_type==='entity'?'🏢':w.entity_type==='vessel'?'🚢':w.entity_type==='aircraft'?'✈️':'👤'}</div>
+      <div style="flex:1">
+        <div class="wl-name">${esc(w.name)}</div>
+        <div class="wl-type">${w.entity_type}${w.notes?` · ${esc(w.notes.substring(0,60))}`:''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="wl-hits">
+          <div class="hit-count ${w.sanctions_hits===0?'zero':''}">${w.sanctions_hits}</div>
+          <div class="hit-label">sanctions hits</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="quickScreen('${esc(w.name)}')">Screen</button>
+        <button class="btn btn-danger btn-sm" onclick="removeWatchlist(${w.id})">Remove</button>
+      </div>
+    </div>`).join('');
+}
+
+function quickScreen(name) {
+  document.getElementById('screen-query').value = name;
+  showPage('screen');
+  doScreen();
+}
+
+async function removeWatchlist(id) {
+  await fetch(`/api/watchlist/${id}`, {method:'DELETE'});
+  loadWatchlist();
+  showToast('Removed from watchlist');
+}
+
+function openAddWatchlist() {
+  document.getElementById('wl-name').value='';
+  document.getElementById('wl-notes').value='';
+  document.getElementById('modal-watchlist').classList.add('open');
+  setTimeout(()=>document.getElementById('wl-name').focus(), 100);
+}
+
+async function addWatchlist() {
+  const name = document.getElementById('wl-name').value.trim();
+  if (!name) { showToast('Please enter a name'); return; }
+  await fetch('/api/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({
+    name, entity_type: document.getElementById('wl-type').value, notes: document.getElementById('wl-notes').value
+  })});
+  closeModal('modal-watchlist');
+  loadWatchlist();
+  showToast(`"${name}" added to watchlist`);
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ─── Entities ─────────────────────────────────────────────────────────────────
+async function loadEntities() {
+  const listFilter = document.getElementById('filter-list').value;
+  const typeFilter = document.getElementById('filter-type').value;
+  let url = `/api/entities?limit=${entitiesPageSize}&offset=${entitiesPage*entitiesPageSize}`;
+  if (listFilter) url += `&list=${encodeURIComponent(listFilter)}`;
+  if (typeFilter) url += `&type=${encodeURIComponent(typeFilter)}`;
+  const data = await fetch(url).then(r=>r.json());
+  const tbody = document.getElementById('entities-tbody');
+  const badgeClass = {'OFAC SDN':'badge-ofac','EU Consolidated':'badge-eu','UNSC':'badge-un','UK FCDO':'badge-uk'};
+  tbody.innerHTML = data.entities.map(e => `
+    <tr>
+      <td><div style="font-size:13px;font-weight:600">${esc(e.name)}</div><div style="font-size:11px;color:var(--text3)">${(e.aliases||'').split(';').slice(0,2).join(' · ')}</div></td>
+      <td><span class="result-badge ${badgeClass[e.list_name]||'badge-ofac'}">${esc(e.list_name)}</span></td>
+      <td style="font-size:12px">${e.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</td>
+      <td style="font-size:13px">${esc(e.country||'—')}</td>
+      <td style="font-size:12px;color:var(--text2);max-width:180px">${esc(e.program||'—')}</td>
+      <td style="font-size:12px;color:var(--text3)">${e.designation_date||'—'}</td>
+    </tr>`).join('');
+  const pages = Math.ceil(data.total / entitiesPageSize);
+  const pag = document.getElementById('entities-pagination');
+  pag.innerHTML = `<span style="font-size:12px;color:var(--text3)">Showing ${data.offset+1}–${Math.min(data.offset+entitiesPageSize,data.total)} of ${data.total}</span>`;
+  if (entitiesPage > 0) pag.innerHTML += `<button class="btn btn-ghost btn-sm" onclick="entitiesPage--;loadEntities()">← Prev</button>`;
+  if (entitiesPage < pages-1) pag.innerHTML += `<button class="btn btn-ghost btn-sm" onclick="entitiesPage++;loadEntities()">Next →</button>`;
+}
+
+// ─── Countries ────────────────────────────────────────────────────────────────
+async function loadCountries() {
+  const countries = await fetch('/api/countries').then(r=>r.json());
+  const top = countries.slice(0,10);
+  if (chartCountries) chartCountries.destroy();
+  chartCountries = new Chart(document.getElementById('chart-countries'), {
+    type: 'bar',
+    data: {
+      labels: top.map(c=>c.country),
+      datasets: [{
+        label: 'Sanctioned Entities',
+        data: top.map(c=>c.count),
+        backgroundColor: top.map(c => ({critical:'rgba(239,68,68,.7)',high:'rgba(249,115,22,.7)',medium:'rgba(234,179,8,.7)',low:'rgba(59,130,246,.7)'}[c.risk_level])),
+        borderRadius: 5,
+      }]
+    },
+    options: {
+      indexAxis:'y', plugins:{legend:{display:false}},
+      scales:{
+        x:{grid:{color:'rgba(255,255,255,.06)'},ticks:{color:'#64748b'}},
+        y:{grid:{color:'rgba(255,255,255,.06)'},ticks:{color:'#94a3b8',font:{size:11}}}
+      }
+    }
+  });
+
+  const regimes = {Russia:'OFAC/EU/UK',Iran:'OFAC/UN',Korea_North:'OFAC/UN/EU',Syria:'OFAC/EU',Belarus:'EU/UK'};
+  document.getElementById('countries-tbody').innerHTML = countries.map(c => `
+    <tr>
+      <td style="font-weight:600">${esc(c.country)}</td>
+      <td style="font-weight:700;color:var(--text)">${c.count}</td>
+      <td><span class="risk-pill risk-${c.risk_level}">${c.risk_level}</span></td>
+      <td style="font-size:12px;color:var(--text2)">${regimes[c.country.replace(', ','_').replace(' ','_')]||'Multiple Regimes'}</td>
+    </tr>`).join('');
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function esc(str) {
+  return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), now = new Date(), diff = Math.floor((now-d)/1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60)+'m ago';
+  if (diff < 86400) return Math.floor(diff/3600)+'h ago';
+  return Math.floor(diff/86400)+'d ago';
+}
+
+async function refreshAll() {
+  showToast('Refreshing…');
+  await Promise.all([loadDashboard(), loadAlerts()]);
+  showToast('Refreshed ✓');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+loadDashboard();
+setInterval(loadDashboard, 60000);
+setInterval(loadAlerts, 30000);
+
+// Close modals on backdrop click
+document.querySelectorAll('.modal-backdrop').forEach(m => m.addEventListener('click', e => { if(e.target===m) m.classList.remove('open'); }));
+</script>
+</body>
+</html>

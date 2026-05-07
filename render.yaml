@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: sanctions-iq
+    env: python
+    region: oregon
+    plan: starter          # $7/mo — always-on, no spin-down
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn "app:create_app()" --workers 1 --threads 2 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /login
+    disk:
+      name: sanctions-db
+      mountPath: /data
+      sizeGB: 1            # $0.25/mo — persists the SQLite DB across deploys
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true   # Render auto-generates a secure random value
+      - key: DB_PATH
+        value: /data/sanctions.db
+      - key: RESEND_API_KEY
+        sync: false           # You'll paste this in the Render dashboard
+      - key: RESEND_FROM
+        sync: false           # e.g. "SanctionsIQ <noreply@yourdomain.com>"
+      - key: PYTHON_VERSION
+        value: "3.11.0"

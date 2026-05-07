@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Sign In — SanctionsIQ</title>
+<style>
+:root{--bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--border:#2a3050;--accent:#3b82f6;--accent2:#6366f1;--red:#ef4444;--green:#22c55e;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.wrap{width:100%;max-width:400px}
+.logo{text-align:center;margin-bottom:32px}
+.logo-icon{width:52px;height:52px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:12px}
+.logo-title{font-size:22px;font-weight:700;letter-spacing:-.4px}
+.logo-sub{font-size:13px;color:var(--text3);margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px}
+.card-title{font-size:18px;font-weight:700;margin-bottom:6px}
+.card-sub{font-size:13px;color:var(--text2);margin-bottom:24px}
+.form-group{margin-bottom:16px}
+label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:.3px}
+input[type=email],input[type=password],input[type=text]{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;transition:border .15s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.row{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;font-size:13px}
+.check-row{display:flex;align-items:center;gap:8px;color:var(--text2)}
+input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+.btn{width:100%;padding:12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all .15s}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-primary:active{transform:translateY(0)}
+.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:16px;display:flex;gap:8px;align-items:center}
+.divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--text3);font-size:12px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.link-row{text-align:center;margin-top:20px;font-size:13px;color:var(--text2)}
+.link-row a{color:var(--accent);text-decoration:none;font-weight:500}
+.link-row a:hover{text-decoration:underline}
+a.forgot{color:var(--text3);font-size:13px;text-decoration:none}
+a.forgot:hover{color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <div class="logo-icon">⚖</div>
+    <div class="logo-title">SanctionsIQ</div>
+    <div class="logo-sub">Global Compliance Monitor</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Welcome back</div>
+    <div class="card-sub">Sign in to your compliance dashboard</div>
+
+    {% if error %}
+    <div class="error"><span>⚠</span> {{ error }}</div>
+    {% endif %}
+
+    <form method="POST">
+      <div class="form-group">
+        <label>Email Address</label>
+        <input type="email" name="email" placeholder="you@company.com" required autofocus
+               value="{{ request.form.get('email','') }}"/>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" placeholder="••••••••" required/>
+      </div>
+      <div class="row">
+        <label class="check-row">
+          <input type="checkbox" name="remember"/> Remember me
+        </label>
+        <a href="{{ url_for('auth.forgot_password') }}" class="forgot">Forgot password?</a>
+      </div>
+      <button type="submit" class="btn btn-primary">Sign In →</button>
+    </form>
+
+    <div class="link-row">
+      Don't have an account? <a href="{{ url_for('auth.register') }}">Create one</a>
+    </div>
+  </div>
+</div>
+</body>
+</html>

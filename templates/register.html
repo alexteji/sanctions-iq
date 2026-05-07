@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Create Account — SanctionsIQ</title>
+<style>
+:root{--bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--border:#2a3050;--accent:#3b82f6;--accent2:#6366f1;--red:#ef4444;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.wrap{width:100%;max-width:420px}
+.logo{text-align:center;margin-bottom:32px}
+.logo-icon{width:52px;height:52px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:12px}
+.logo-title{font-size:22px;font-weight:700;letter-spacing:-.4px}
+.logo-sub{font-size:13px;color:var(--text3);margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:32px}
+.card-title{font-size:18px;font-weight:700;margin-bottom:6px}
+.card-sub{font-size:13px;color:var(--text2);margin-bottom:24px}
+.form-group{margin-bottom:16px}
+label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;letter-spacing:.3px}
+input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--text);font-size:14px;outline:none;transition:border .15s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.hint{font-size:11px;color:var(--text3);margin-top:5px}
+.strength-bar{height:3px;border-radius:2px;background:var(--border);margin-top:8px;overflow:hidden}
+.strength-fill{height:100%;border-radius:2px;transition:all .3s;width:0}
+.btn{width:100%;padding:12px;border-radius:8px;border:none;cursor:pointer;font-size:14px;font-weight:600;transition:all .15s;margin-top:4px}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--red);margin-bottom:16px;display:flex;gap:8px;align-items:center}
+.link-row{text-align:center;margin-top:20px;font-size:13px;color:var(--text2)}
+.link-row a{color:var(--accent);text-decoration:none;font-weight:500}
+.link-row a:hover{text-decoration:underline}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.terms{font-size:12px;color:var(--text3);text-align:center;margin-top:16px;line-height:1.5}
+.terms a{color:var(--text2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">
+    <div class="logo-icon">⚖</div>
+    <div class="logo-title">SanctionsIQ</div>
+    <div class="logo-sub">Global Compliance Monitor</div>
+  </div>
+  <div class="card">
+    <div class="card-title">Create your account</div>
+    <div class="card-sub">Start monitoring sanctions and compliance risks</div>
+
+    {% if error %}
+    <div class="error"><span>⚠</span> {{ error }}</div>
+    {% endif %}
+
+    <form method="POST">
+      <div class="form-group">
+        <label>Full Name</label>
+        <input type="text" name="name" placeholder="Jane Smith" required autofocus
+               value="{{ request.form.get('name','') }}"/>
+      </div>
+      <div class="form-group">
+        <label>Work Email</label>
+        <input type="email" name="email" placeholder="jane@company.com" required
+               value="{{ request.form.get('email','') }}"/>
+      </div>
+      <div class="two-col">
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" name="password" id="pw" placeholder="Min 8 characters"
+                 required oninput="checkStrength(this.value)"/>
+          <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+          <div class="hint" id="strength-label">Enter a password</div>
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <input type="password" name="confirm" id="pw2" placeholder="Repeat password" required
+                 oninput="checkMatch()"/>
+          <div class="hint" id="match-label">&nbsp;</div>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary">Create Account →</button>
+    </form>
+
+    <div class="terms">
+      By registering you agree to the <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
+    </div>
+    <div class="link-row">
+      Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a>
+    </div>
+  </div>
+</div>
+<script>
+const colors = ['#ef4444','#f97316','#eab308','#22c55e'];
+const labels = ['Too weak','Fair','Good','Strong'];
+function checkStrength(v) {
+  let s = 0;
+  if (v.length >= 8) s++;
+  if (/[A-Z]/.test(v) && /[a-z]/.test(v)) s++;
+  if (/\d/.test(v)) s++;
+  if (/[^A-Za-z0-9]/.test(v)) s++;
+  const fill = document.getElementById('strength-fill');
+  const label = document.getElementById('strength-label');
+  fill.style.width = (s * 25) + '%';
+  fill.style.background = colors[s - 1] || 'transparent';
+  label.textContent = s > 0 ? labels[s - 1] : 'Enter a password';
+  label.style.color = colors[s - 1] || '#64748b';
+  checkMatch();
+}
+function checkMatch() {
+  const p = document.getElementById('pw').value;
+  const p2 = document.getElementById('pw2').value;
+  const label = document.getElementById('match-label');
+  if (!p2) { label.innerHTML = '&nbsp;'; return; }
+  if (p === p2) { label.textContent = '✓ Passwords match'; label.style.color = '#22c55e'; }
+  else { label.textContent = '✗ Passwords don\'t match'; label.style.color = '#ef4444'; }
+}
+</script>
+</body>
+</html>
