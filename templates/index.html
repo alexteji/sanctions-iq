@@ -190,6 +190,23 @@ body.light input[type=text],body.light select,body.light textarea{background:var
 body.light .modal{background:var(--surface)}
 body.light .modal-backdrop{background:rgba(0,0,0,.4)}
 
+/* ── Vessel / Aircraft tracking ── */
+.track-item{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.track-item:hover{background:var(--surface2)}
+.track-avatar{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.track-avatar.vessel{background:rgba(14,165,233,.15)}
+.track-avatar.aircraft{background:rgba(139,92,246,.15)}
+.pos-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin-top:8px;padding:8px 10px;background:var(--surface3);border-radius:7px;font-size:11px}
+.pos-cell{display:flex;flex-direction:column;gap:2px}
+.pos-label{color:var(--text3);text-transform:uppercase;letter-spacing:.4px;font-size:9px;font-weight:600}
+.pos-val{color:var(--text);font-weight:600;font-size:12px}
+.type-badge{display:inline-block;padding:1px 7px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-right:4px}
+.tb-sanctions{background:rgba(239,68,68,.2);color:var(--red)}
+.tb-flag{background:rgba(249,115,22,.2);color:var(--orange)}
+.tb-port{background:rgba(249,115,22,.2);color:var(--orange)}
+.tb-airport{background:rgba(249,115,22,.2);color:var(--orange)}
+.tb-news{background:rgba(59,130,246,.2);color:var(--accent)}
+
 /* ── Live Monitoring ── */
 .monitor-item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
 .monitor-item:hover{background:var(--surface2)}
@@ -231,6 +248,14 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
     <button class="nav-item" onclick="showPage('monitoring')">
       <span class="nav-icon">🎯</span> Live Monitoring
       <span class="nav-badge" id="monitoring-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-item" onclick="showPage('vessels')">
+      <span class="nav-icon">🚢</span> Vessel Tracking
+      <span class="nav-badge" id="vessel-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-item" onclick="showPage('aircraft')">
+      <span class="nav-icon">✈️</span> Aircraft Tracking
+      <span class="nav-badge" id="aircraft-badge" style="display:none">0</span>
     </button>
     <button class="nav-item" onclick="showPage('entities')">
       <span class="nav-icon">🗃</span> Sanctions Lists
@@ -457,6 +482,50 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
       </div>
     </div>
 
+    <!-- ── Vessel Tracking ── -->
+    <div id="page-vessels" class="page">
+      <div class="section-header">
+        <span class="section-title">Vessel Tracking (AIS)</span>
+        <button class="btn btn-primary btn-sm" onclick="openAddVessel()">+ Add Vessel</button>
+      </div>
+      <div style="background:rgba(14,165,233,.07);border:1px solid rgba(14,165,233,.2);border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:var(--text2);line-height:1.6">
+        <strong style="color:#0ea5e9">AIS Monitoring:</strong> Add vessels by name, IMO, or MMSI. bureauq checks sanctions lists, flag state risk, and news feeds every 30 min.
+        Live position data requires a <strong>MARINETRAFFIC_API_KEY</strong> environment variable. Route and sanctions checks run without it.
+      </div>
+      <div class="card" style="padding:0">
+        <div id="vessel-list"><div class="empty-state"><div class="empty-icon">🚢</div>No vessels being tracked. Add one to get started.</div></div>
+      </div>
+      <div id="vessel-hits-panel" style="display:none;margin-top:20px">
+        <div class="section-header">
+          <span class="section-title" id="vessel-hits-title">Vessel Hits</span>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('vessel-hits-panel').style.display='none'">✕ Close</button>
+        </div>
+        <div class="card" style="padding:0"><div id="vessel-hits-list"></div></div>
+      </div>
+    </div>
+
+    <!-- ── Aircraft Tracking ── -->
+    <div id="page-aircraft" class="page">
+      <div class="section-header">
+        <span class="section-title">Aircraft Tracking (ADS-B)</span>
+        <button class="btn btn-primary btn-sm" onclick="openAddAircraft()">+ Add Aircraft</button>
+      </div>
+      <div style="background:rgba(139,92,246,.07);border:1px solid rgba(139,92,246,.2);border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px;color:var(--text2);line-height:1.6">
+        <strong style="color:#8b5cf6">ADS-B Monitoring:</strong> Add aircraft by registration or ICAO24 hex code. Live position data is pulled from
+        <strong>OpenSky Network</strong> — completely free, no API key required. Sanctioned airport detection and sanctions checks run automatically.
+      </div>
+      <div class="card" style="padding:0">
+        <div id="aircraft-list"><div class="empty-state"><div class="empty-icon">✈️</div>No aircraft being tracked. Add one to get started.</div></div>
+      </div>
+      <div id="aircraft-hits-panel" style="display:none;margin-top:20px">
+        <div class="section-header">
+          <span class="section-title" id="aircraft-hits-title">Aircraft Hits</span>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('aircraft-hits-panel').style.display='none'">✕ Close</button>
+        </div>
+        <div class="card" style="padding:0"><div id="aircraft-hits-list"></div></div>
+      </div>
+    </div>
+
     <!-- ── Entities ── -->
     <div id="page-entities" class="page">
       <div class="section-header">
@@ -547,6 +616,93 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
   </div>
 </div>
 
+<!-- Add Vessel Modal -->
+<div class="modal-backdrop" id="modal-vessel">
+  <div class="modal">
+    <div class="modal-title">🚢 Add Vessel to Track</div>
+    <div class="form-group">
+      <label>Vessel Name</label>
+      <input type="text" id="v-name" placeholder="e.g. Fortune, Adrian Darya 1"/>
+    </div>
+    <div class="two-col" style="gap:10px">
+      <div class="form-group">
+        <label>IMO Number <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+        <input type="text" id="v-imo" placeholder="e.g. 9187786"/>
+      </div>
+      <div class="form-group">
+        <label>MMSI <span style="color:var(--text3);font-weight:400">(for live AIS)</span></label>
+        <input type="text" id="v-mmsi" placeholder="e.g. 422204900"/>
+      </div>
+    </div>
+    <div class="two-col" style="gap:10px">
+      <div class="form-group">
+        <label>Flag (ISO code)</label>
+        <input type="text" id="v-flag" placeholder="e.g. IR, KP, SY" maxlength="2"/>
+      </div>
+      <div class="form-group">
+        <label>Vessel Type</label>
+        <select id="v-type">
+          <option value="tanker">Tanker</option>
+          <option value="bulk_carrier">Bulk Carrier</option>
+          <option value="container">Container Ship</option>
+          <option value="cargo">General Cargo</option>
+          <option value="fishing">Fishing Vessel</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Notes <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+      <textarea id="v-notes" rows="2" placeholder="Case reference, reason for monitoring…"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-vessel')">Cancel</button>
+      <button class="btn btn-primary" onclick="addVessel()">Start Tracking</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Aircraft Modal -->
+<div class="modal-backdrop" id="modal-aircraft">
+  <div class="modal">
+    <div class="modal-title">✈️ Add Aircraft to Track</div>
+    <div class="form-group">
+      <label>Aircraft Name / Description</label>
+      <input type="text" id="a-name" placeholder="e.g. Mahan Air EP-MNF, Private Jet N123AB"/>
+    </div>
+    <div class="two-col" style="gap:10px">
+      <div class="form-group">
+        <label>Registration / Tail No.</label>
+        <input type="text" id="a-reg" placeholder="e.g. EP-MNF, N12345"/>
+      </div>
+      <div class="form-group">
+        <label>ICAO24 Hex <span style="color:var(--text3);font-weight:400">(for live ADS-B)</span></label>
+        <input type="text" id="a-icao24" placeholder="e.g. 730902" maxlength="6"/>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Aircraft Type</label>
+      <select id="a-type">
+        <option value="fixed-wing">Fixed-Wing</option>
+        <option value="helicopter">Helicopter</option>
+        <option value="cargo">Cargo Aircraft</option>
+        <option value="private-jet">Private Jet</option>
+        <option value="military">Military</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notes <span style="color:var(--text3);font-weight:400">(optional)</span></label>
+      <textarea id="a-notes" rows="2" placeholder="Case reference, reason for monitoring…"></textarea>
+    </div>
+    <p style="font-size:11px;color:var(--text3);margin-top:-4px">ICAO24 is the 6-character hex transponder code. Find it on FlightRadar24 or ADS-B Exchange by searching the registration.</p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-aircraft')">Cancel</button>
+      <button class="btn btn-primary" onclick="addAircraft()">Start Tracking</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Monitoring Modal -->
 <div class="modal-backdrop" id="modal-monitoring">
   <div class="modal">
@@ -588,7 +744,7 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',entities:'Sanctions Lists',countries:'Country Risk'};
+  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',vessels:'Vessel Tracking (AIS)',aircraft:'Aircraft Tracking (ADS-B)',entities:'Sanctions Lists',countries:'Country Risk'};
   document.getElementById('topbar-title').textContent = titles[name] || name;
   // Activate nav item
   document.querySelectorAll('.nav-item').forEach(n => {
@@ -598,6 +754,8 @@ function showPage(name) {
   if (name === 'news') loadNews();
   if (name === 'watchlist') loadWatchlist();
   if (name === 'monitoring') loadMonitoring();
+  if (name === 'vessels') loadVessels();
+  if (name === 'aircraft') loadAircraft();
   if (name === 'entities') loadEntities();
   if (name === 'countries') loadCountries();
   if (name === 'screen') loadScreenHistory();
@@ -919,6 +1077,257 @@ async function refreshAll() {
   showToast('Refreshing…');
   await Promise.all([loadDashboard(), loadAlerts()]);
   showToast('Refreshed ✓');
+}
+
+// ─── Vessel Tracking ──────────────────────────────────────────────────────────
+function vesselTypeIcon(t) {
+  return {tanker:'🛢',bulk_carrier:'⚓',container:'📦',cargo:'🚢',fishing:'🎣',other:'🚢'}[t] || '🚢';
+}
+
+function posCard(pos, type) {
+  if (!pos) return '';
+  if (type === 'vessel') {
+    const spd = pos.speed != null ? `${pos.speed} kn` : '—';
+    const hdg = pos.heading != null ? `${pos.heading}°` : '—';
+    const lat = pos.lat != null ? `${parseFloat(pos.lat).toFixed(4)}°` : '—';
+    const lon = pos.lon != null ? `${parseFloat(pos.lon).toFixed(4)}°` : '—';
+    const dest = pos.destination || '—';
+    const port = pos.last_port || '—';
+    const stale = pos.cached ? ' <span style="color:var(--text3)">(cached)</span>' : '';
+    return `<div class="pos-grid">
+      <div class="pos-cell"><span class="pos-label">Latitude</span><span class="pos-val">${lat}</span></div>
+      <div class="pos-cell"><span class="pos-label">Longitude</span><span class="pos-val">${lon}</span></div>
+      <div class="pos-cell"><span class="pos-label">Speed</span><span class="pos-val">${spd}</span></div>
+      <div class="pos-cell"><span class="pos-label">Heading</span><span class="pos-val">${hdg}</span></div>
+      <div class="pos-cell"><span class="pos-label">Destination</span><span class="pos-val">${esc(dest)}</span></div>
+      <div class="pos-cell"><span class="pos-label">Last Port</span><span class="pos-val">${esc(port)}${stale}</span></div>
+    </div>`;
+  } else {
+    const lat = pos.latitude != null ? `${parseFloat(pos.latitude).toFixed(4)}°` : '—';
+    const lon = pos.longitude != null ? `${parseFloat(pos.longitude).toFixed(4)}°` : '—';
+    const alt = pos.altitude_ft != null ? `${pos.altitude_ft.toLocaleString()} ft` : '—';
+    const spd = pos.speed_kts != null ? `${pos.speed_kts} kts` : '—';
+    const hdg = pos.heading != null ? `${Math.round(pos.heading)}°` : '—';
+    const cs  = pos.callsign || '—';
+    const gnd = pos.on_ground ? 'On ground' : 'Airborne';
+    const stale = pos.cached ? ' <span style="color:var(--text3)">(cached)</span>' : '';
+    return `<div class="pos-grid">
+      <div class="pos-cell"><span class="pos-label">Latitude</span><span class="pos-val">${lat}</span></div>
+      <div class="pos-cell"><span class="pos-label">Longitude</span><span class="pos-val">${lon}</span></div>
+      <div class="pos-cell"><span class="pos-label">Altitude</span><span class="pos-val">${alt}</span></div>
+      <div class="pos-cell"><span class="pos-label">Speed</span><span class="pos-val">${spd}</span></div>
+      <div class="pos-cell"><span class="pos-label">Heading</span><span class="pos-val">${hdg}</span></div>
+      <div class="pos-cell"><span class="pos-label">Callsign</span><span class="pos-val">${esc(cs)}${stale}</span></div>
+      <div class="pos-cell"><span class="pos-label">Status</span><span class="pos-val">${gnd}</span></div>
+    </div>`;
+  }
+}
+
+async function loadVessels() {
+  const items = await fetch('/api/vessels').then(r => r.json());
+  const totalUnread = items.reduce((s, i) => s + (i.unread_hits || 0), 0);
+  const badge = document.getElementById('vessel-badge');
+  badge.textContent = totalUnread; badge.style.display = totalUnread ? '' : 'none';
+  const el = document.getElementById('vessel-list');
+  if (!items.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🚢</div>No vessels tracked yet.</div>'; return; }
+  el.innerHTML = items.map(v => `
+    <div class="track-item" id="vrow-${v.id}">
+      <div class="track-avatar vessel">${vesselTypeIcon(v.vessel_type)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600">${esc(v.name)}</span>
+          ${v.flag ? `<span style="font-size:11px;background:var(--surface3);padding:1px 6px;border-radius:4px;color:var(--text2)">${esc(v.flag.toUpperCase())} flag</span>` : ''}
+          ${v.imo ? `<span style="font-size:11px;color:var(--text3)">IMO ${esc(v.imo)}</span>` : ''}
+          ${v.mmsi ? `<span style="font-size:11px;color:var(--text3)">MMSI ${esc(v.mmsi)}</span>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">
+          ${v.vessel_type || 'vessel'}${v.last_checked ? ` · Checked ${relTime(v.last_checked)}` : ''}
+        </div>
+        ${posCard(v.position, 'vessel')}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px">
+        <div style="text-align:right">
+          <span class="hit-badge ${(v.unread_hits||0)===0?'zero':''}">${v.unread_hits||0} new</span>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${v.total_hits||0} total</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="viewVesselHits(${v.id},'${esc(v.name)}')">Hits</button>
+        <button class="btn btn-ghost btn-sm" onclick="refreshVesselPos(${v.id})" title="Refresh position">📡</button>
+        <button class="btn btn-ghost btn-sm" onclick="checkVesselNow(${v.id})" title="Run check now">↻</button>
+        <button class="btn btn-danger btn-sm" onclick="removeVessel(${v.id})">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function openAddVessel() {
+  ['v-name','v-imo','v-mmsi','v-flag','v-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('modal-vessel').classList.add('open');
+  setTimeout(() => document.getElementById('v-name').focus(), 100);
+}
+
+async function addVessel() {
+  const name = document.getElementById('v-name').value.trim();
+  if (!name) { showToast('Vessel name required'); return; }
+  const res = await fetch('/api/vessels', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name, imo: document.getElementById('v-imo').value.trim(),
+      mmsi: document.getElementById('v-mmsi').value.trim(),
+      flag: document.getElementById('v-flag').value.trim(),
+      vessel_type: document.getElementById('v-type').value,
+      notes: document.getElementById('v-notes').value.trim(),
+    })
+  }).then(r => r.json());
+  if (res.error) { showToast(res.error); return; }
+  closeModal('modal-vessel');
+  loadVessels();
+  showToast(`Now tracking "${name}" — running initial check…`);
+}
+
+async function removeVessel(vid) {
+  await fetch(`/api/vessels/${vid}`, {method:'DELETE'});
+  document.getElementById('vessel-hits-panel').style.display = 'none';
+  loadVessels(); showToast('Vessel removed');
+}
+
+async function checkVesselNow(vid) {
+  showToast('Running check…');
+  const r = await fetch(`/api/vessels/${vid}/check`, {method:'POST'}).then(r => r.json());
+  showToast(r.message || 'Check triggered');
+  setTimeout(loadVessels, 3000);
+}
+
+async function refreshVesselPos(vid) {
+  showToast('Fetching AIS position…');
+  const r = await fetch(`/api/vessels/${vid}/position`).then(r => r.json());
+  if (r.error === 'no_api_key') { showToast('Set MARINETRAFFIC_API_KEY for live positions'); }
+  else if (r.error) { showToast('No AIS data available'); }
+  else { showToast('Position updated'); }
+  loadVessels();
+}
+
+async function viewVesselHits(vid, name) {
+  const panel = document.getElementById('vessel-hits-panel');
+  document.getElementById('vessel-hits-title').textContent = `Hits — ${name}`;
+  document.getElementById('vessel-hits-list').innerHTML = '<div style="padding:20px;text-align:center"><span class="spinner"></span></div>';
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+  const hits = await fetch(`/api/vessels/${vid}/hits`).then(r => r.json());
+  renderHitsInto('vessel-hits-list', hits, 'vessel_id');
+  loadVessels();
+}
+
+// ─── Aircraft Tracking ────────────────────────────────────────────────────────
+function aircraftTypeIcon(t) {
+  return {helicopter:'🚁','private-jet':'🛩',military:'🛫',cargo:'🛩','fixed-wing':'✈️',other:'✈️'}[t] || '✈️';
+}
+
+async function loadAircraft() {
+  const items = await fetch('/api/aircraft').then(r => r.json());
+  const totalUnread = items.reduce((s, i) => s + (i.unread_hits || 0), 0);
+  const badge = document.getElementById('aircraft-badge');
+  badge.textContent = totalUnread; badge.style.display = totalUnread ? '' : 'none';
+  const el = document.getElementById('aircraft-list');
+  if (!items.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">✈️</div>No aircraft tracked yet.</div>'; return; }
+  el.innerHTML = items.map(a => `
+    <div class="track-item" id="arow-${a.id}">
+      <div class="track-avatar aircraft">${aircraftTypeIcon(a.aircraft_type)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600">${esc(a.name)}</span>
+          ${a.registration ? `<span style="font-size:11px;background:var(--surface3);padding:1px 6px;border-radius:4px;color:var(--text2)">${esc(a.registration)}</span>` : ''}
+          ${a.icao24 ? `<span style="font-size:11px;color:var(--text3)">ICAO24: ${esc(a.icao24)}</span>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">
+          ${a.aircraft_type || 'aircraft'}${a.last_checked ? ` · Checked ${relTime(a.last_checked)}` : ''}
+          ${a.position && !a.position.on_ground ? ' · <span style="color:var(--accent3)">● Airborne</span>' : ''}
+        </div>
+        ${posCard(a.position, 'aircraft')}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px">
+        <div style="text-align:right">
+          <span class="hit-badge ${(a.unread_hits||0)===0?'zero':''}">${a.unread_hits||0} new</span>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">${a.total_hits||0} total</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="viewAircraftHits(${a.id},'${esc(a.name)}')">Hits</button>
+        <button class="btn btn-ghost btn-sm" onclick="refreshAircraftPos(${a.id})" title="Refresh ADS-B position">📡</button>
+        <button class="btn btn-ghost btn-sm" onclick="checkAircraftNow(${a.id})" title="Run check now">↻</button>
+        <button class="btn btn-danger btn-sm" onclick="removeAircraft(${a.id})">✕</button>
+      </div>
+    </div>`).join('');
+}
+
+function openAddAircraft() {
+  ['a-name','a-reg','a-icao24','a-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('modal-aircraft').classList.add('open');
+  setTimeout(() => document.getElementById('a-name').focus(), 100);
+}
+
+async function addAircraft() {
+  const name = document.getElementById('a-name').value.trim();
+  if (!name) { showToast('Aircraft name required'); return; }
+  const res = await fetch('/api/aircraft', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name, registration: document.getElementById('a-reg').value.trim(),
+      icao24: document.getElementById('a-icao24').value.trim(),
+      aircraft_type: document.getElementById('a-type').value,
+      notes: document.getElementById('a-notes').value.trim(),
+    })
+  }).then(r => r.json());
+  if (res.error) { showToast(res.error); return; }
+  closeModal('modal-aircraft');
+  loadAircraft();
+  showToast(`Now tracking "${name}" — running initial check…`);
+}
+
+async function removeAircraft(aid) {
+  await fetch(`/api/aircraft/${aid}`, {method:'DELETE'});
+  document.getElementById('aircraft-hits-panel').style.display = 'none';
+  loadAircraft(); showToast('Aircraft removed');
+}
+
+async function checkAircraftNow(aid) {
+  showToast('Running check…');
+  const r = await fetch(`/api/aircraft/${aid}/check`, {method:'POST'}).then(r => r.json());
+  showToast(r.message || 'Check triggered');
+  setTimeout(loadAircraft, 3000);
+}
+
+async function refreshAircraftPos(aid) {
+  showToast('Fetching ADS-B position from OpenSky…');
+  const r = await fetch(`/api/aircraft/${aid}/position`).then(r => r.json());
+  if (r.error === 'no_data') showToast('No live ADS-B data — aircraft may be on ground or transponder off');
+  else showToast('Position updated');
+  loadAircraft();
+}
+
+async function viewAircraftHits(aid, name) {
+  const panel = document.getElementById('aircraft-hits-panel');
+  document.getElementById('aircraft-hits-title').textContent = `Hits — ${name}`;
+  document.getElementById('aircraft-hits-list').innerHTML = '<div style="padding:20px;text-align:center"><span class="spinner"></span></div>';
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+  const hits = await fetch(`/api/aircraft/${aid}/hits`).then(r => r.json());
+  renderHitsInto('aircraft-hits-list', hits, 'aircraft_id');
+  loadAircraft();
+}
+
+function renderHitsInto(elId, hits, idKey) {
+  const el = document.getElementById(elId);
+  if (!hits.length) { el.innerHTML = '<div class="empty-state"><div class="empty-icon">🔍</div>No hits found yet.</div>'; return; }
+  const typeClass = {sanctions:'tb-sanctions',flag_risk:'tb-flag',sanctioned_port:'tb-port',sanctioned_airport:'tb-airport',news:'tb-news'};
+  const typeLabel = {sanctions:'Sanctions',flag_risk:'Flag Risk',sanctioned_port:'Sanctioned Port',sanctioned_airport:'Sanctioned Airport',news:'News'};
+  el.innerHTML = hits.map(h => `
+    <div class="hit-item">
+      <span class="type-badge ${typeClass[h.hit_type]||'tb-news'}">${typeLabel[h.hit_type]||h.hit_type}</span>
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">${esc(h.title)}</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:5px">${esc((h.body||'').substring(0,300))}${(h.body||'').length>300?'…':''}</div>
+      <div style="font-size:11px;color:var(--text3);display:flex;gap:10px;flex-wrap:wrap">
+        <span>📡 ${esc(h.source||'')}</span><span>🕐 ${relTime(h.found_at)}</span>
+        ${h.url?`<a href="${esc(h.url)}" target="_blank" style="font-size:11px">View →</a>`:''}
+        ${h.notified?'<span style="color:var(--accent3)">✓ Alert sent</span>':''}
+      </div>
+    </div>`).join('');
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────

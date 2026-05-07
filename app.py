@@ -123,6 +123,61 @@ def init_db():
             hash TEXT UNIQUE,
             FOREIGN KEY(monitoring_id) REFERENCES monitoring_list(id)
         );
+        CREATE TABLE IF NOT EXISTS vessel_monitoring (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            imo TEXT,
+            mmsi TEXT,
+            flag TEXT,
+            vessel_type TEXT DEFAULT 'tanker',
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            last_position TEXT,
+            last_checked TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS vessel_hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vessel_id INTEGER NOT NULL,
+            hit_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            source TEXT,
+            url TEXT,
+            found_at TEXT DEFAULT (datetime('now')),
+            notified INTEGER DEFAULT 0,
+            hash TEXT UNIQUE,
+            FOREIGN KEY(vessel_id) REFERENCES vessel_monitoring(id)
+        );
+        CREATE TABLE IF NOT EXISTS aircraft_monitoring (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            registration TEXT,
+            icao24 TEXT,
+            aircraft_type TEXT DEFAULT 'fixed-wing',
+            notes TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            last_position TEXT,
+            last_checked TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS aircraft_hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            aircraft_id INTEGER NOT NULL,
+            hit_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            source TEXT,
+            url TEXT,
+            found_at TEXT DEFAULT (datetime('now')),
+            notified INTEGER DEFAULT 0,
+            hash TEXT UNIQUE,
+            FOREIGN KEY(aircraft_id) REFERENCES aircraft_monitoring(id)
+        );
     """)
     _migrate_users(cur)
     _seed_demo_data(cur)
@@ -515,6 +570,8 @@ def api_me():
 from auth import auth_bp, login_manager
 from billing import billing_bp, subscription_active, get_subscription
 from monitoring import monitoring_bp, start_monitoring_thread
+from vessel_tracking import vessel_bp, start_vessel_thread
+from aircraft_tracking import aircraft_bp, start_aircraft_thread
 
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
@@ -522,6 +579,8 @@ login_manager.login_message = None
 app.register_blueprint(auth_bp)
 app.register_blueprint(billing_bp)
 app.register_blueprint(monitoring_bp)
+app.register_blueprint(vessel_bp)
+app.register_blueprint(aircraft_bp)
 
 @app.context_processor
 def inject_now():
@@ -549,6 +608,8 @@ def create_app():
     bg = threading.Thread(target=_background_refresh, daemon=True)
     bg.start()
     start_monitoring_thread()
+    start_vessel_thread()
+    start_aircraft_thread()
     return app
 
 if __name__ == "__main__":
