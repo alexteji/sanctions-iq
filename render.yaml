@@ -20,5 +20,13 @@ services:
         sync: false           # You'll paste this in the Render dashboard
       - key: RESEND_FROM
         sync: false           # e.g. "bureauq <noreply@yourdomain.com>"
+      - key: STRIPE_SECRET_KEY
+        sync: false           # sk_live_... from Stripe dashboard
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false           # whsec_... from Stripe webhook settings
+      - key: STRIPE_PRICE_STARTER
+        sync: false           # price_... for £49/mo product
+      - key: STRIPE_PRICE_PROFESSIONAL
+        sync: false           # price_... for £149/mo product
       - key: PYTHON_VERSION
         value: "3.11.0"

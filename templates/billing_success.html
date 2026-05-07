@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Subscription Confirmed — bureauq</title>
+<style>
+:root{--bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--border:#2a3050;--accent:#3b82f6;--accent2:#6366f1;--green:#22c55e;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:48px 40px;max-width:480px;width:100%;text-align:center}
+.icon{font-size:52px;margin-bottom:20px;display:block}
+h1{font-size:24px;font-weight:800;margin-bottom:10px}
+p{font-size:14px;color:var(--text2);line-height:1.7;margin-bottom:28px}
+.perks{background:var(--surface2);border-radius:10px;padding:20px;text-align:left;margin-bottom:28px;display:flex;flex-direction:column;gap:10px}
+.perk{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text2)}
+.perk::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0}
+.btn{display:block;padding:13px;border-radius:9px;border:none;cursor:pointer;font-size:14px;font-weight:700;text-decoration:none;transition:all .15s}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.sub-note{font-size:12px;color:var(--text3);margin-top:14px}
+.sub-note a{color:var(--text3)}
+</style>
+</head>
+<body>
+<div class="card">
+  <span class="icon">🎉</span>
+  <h1>You're all set, {{ user.name.split()[0] }}!</h1>
+  <p>Your 14-day free trial has started. You won't be charged until the trial ends — cancel any time before then.</p>
+  <div class="perks">
+    <div class="perk">Entity screening across OFAC, EU, UN & UK lists</div>
+    <div class="perk">Real-time compliance alerts and news feed</div>
+    <div class="perk">Watchlist monitoring with sanctions hit detection</div>
+    <div class="perk">Country risk overview and sanctions database</div>
+  </div>
+  <a href="/" class="btn btn-primary">Go to Dashboard →</a>
+  <div class="sub-note">
+    Manage or cancel your subscription any time from the dashboard.<br/>
+    Questions? <a href="mailto:hello@bureauq.com">hello@bureauq.com</a>
+  </div>
+</div>
+</body>
+</html>

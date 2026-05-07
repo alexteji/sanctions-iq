@@ -209,6 +209,15 @@ label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bot
     <button class="nav-item" onclick="showPage('countries')">
       <span class="nav-icon">🌍</span> Country Risk
     </button>
+    <div class="nav-section">Account</div>
+    <a class="nav-item" href="/pricing">
+      <span class="nav-icon">💳</span> Billing
+      {% if sub.status == 'trialing' %}
+        <span class="nav-badge" style="background:var(--accent)">TRIAL</span>
+      {% elif sub.status == 'past_due' %}
+        <span class="nav-badge">!</span>
+      {% endif %}
+    </a>
   </nav>
   <div class="sidebar-footer">
     <span class="status-dot"></span>
@@ -234,6 +243,21 @@ label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bot
       <a href="/logout" style="margin-left:4px;font-size:11px;color:var(--text3);text-decoration:none;padding:4px 8px;border-radius:5px;border:1px solid var(--border)" title="Sign out">⏻</a>
     </div>
   </div>
+  {% if sub.status == 'trialing' and sub.trial_days_left is not none and sub.trial_days_left <= 5 %}
+  <div style="background:rgba(249,115,22,.08);border-bottom:1px solid rgba(249,115,22,.25);padding:10px 24px;display:flex;align-items:center;gap:10px;font-size:13px">
+    <span>⚠</span>
+    <span>Your free trial ends in <strong>{{ sub.trial_days_left }} day{{ 's' if sub.trial_days_left != 1 }}</strong>. Add a payment method to keep access.</span>
+    <a href="/pricing" style="margin-left:auto;background:var(--orange);color:#fff;padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap">Upgrade now →</a>
+  </div>
+  {% elif sub.status == 'past_due' %}
+  <div style="background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.25);padding:10px 24px;display:flex;align-items:center;gap:10px;font-size:13px">
+    <span>⛔</span>
+    <span>Your last payment failed. Please update your payment method to avoid losing access.</span>
+    <form action="/billing/portal" method="POST" style="margin-left:auto">
+      <button type="submit" style="background:var(--red);color:#fff;padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:none;cursor:pointer;white-space:nowrap">Fix payment →</button>
+    </form>
+  </div>
+  {% endif %}
   <div id="content">
 
     <!-- ── Dashboard ── -->

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Pricing — bureauq</title>
+<style>
+:root{--bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--border:#2a3050;--accent:#3b82f6;--accent2:#6366f1;--green:#22c55e;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--red:#ef4444;--orange:#f97316}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── Nav ── */
+nav{display:flex;align-items:center;justify-content:space-between;padding:16px 40px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(10,13,20,.9);backdrop-filter:blur(12px);z-index:10}
+.nav-logo img{height:28px;filter:invert(1)}
+.nav-actions{display:flex;gap:10px}
+.btn{padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;text-decoration:none;transition:all .15s;display:inline-block}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--surface2);color:var(--text)}
+.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+.btn-full{width:100%;text-align:center;padding:12px;font-size:14px}
+
+/* ── Hero ── */
+.hero{text-align:center;padding:72px 24px 48px}
+.trial-badge{display:inline-block;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:20px;padding:5px 16px;font-size:12px;font-weight:600;color:var(--green);margin-bottom:20px;letter-spacing:.3px}
+.hero h1{font-size:44px;font-weight:800;letter-spacing:-1.5px;margin-bottom:14px;line-height:1.1}
+.hero h1 span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero p{font-size:17px;color:var(--text2);max-width:480px;margin:0 auto;line-height:1.6}
+
+/* ── Trial banner ── */
+.trial-banner{max-width:700px;margin:0 auto 32px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);border-radius:10px;padding:14px 20px;display:flex;align-items:center;gap:12px;font-size:13px}
+.trial-banner.warning{background:rgba(249,115,22,.08);border-color:rgba(249,115,22,.3)}
+.trial-banner.expired{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3)}
+
+/* ── Plans ── */
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;max-width:780px;margin:0 auto;padding:0 24px 80px}
+.plan-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px;position:relative;transition:transform .2s}
+.plan-card:hover{transform:translateY(-4px)}
+.plan-card.highlight{border-color:var(--accent);background:linear-gradient(145deg,var(--surface),rgba(59,130,246,.06))}
+.popular-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:20px;letter-spacing:.5px;white-space:nowrap}
+.plan-name{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin-bottom:6px}
+.plan-price{font-size:42px;font-weight:800;letter-spacing:-1.5px;line-height:1;margin-bottom:4px}
+.plan-price span{font-size:18px;font-weight:500;color:var(--text2);vertical-align:super;margin-right:2px}
+.plan-period{font-size:13px;color:var(--text3);margin-bottom:8px}
+.plan-desc{font-size:13px;color:var(--text2);margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.feature-list{list-style:none;margin-bottom:28px;display:flex;flex-direction:column;gap:10px}
+.feature-list li{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--text2)}
+.feature-list li::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;margin-top:1px}
+.trial-note{text-align:center;font-size:11px;color:var(--text3);margin-top:10px}
+
+/* ── Enterprise ── */
+.enterprise{max-width:700px;margin:0 auto;padding:0 24px 80px}
+.enterprise-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:32px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.enterprise-title{font-size:18px;font-weight:700;margin-bottom:6px}
+.enterprise-desc{font-size:13px;color:var(--text2);line-height:1.6}
+.enterprise-features{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.etag{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 10px;font-size:11px;color:var(--text2)}
+
+/* ── FAQ ── */
+.faq{max-width:700px;margin:0 auto;padding:0 24px 80px}
+.faq h2{font-size:22px;font-weight:700;margin-bottom:24px;text-align:center}
+.faq-item{border-bottom:1px solid var(--border);padding:18px 0}
+.faq-q{font-size:14px;font-weight:600;margin-bottom:8px;cursor:pointer}
+.faq-a{font-size:13px;color:var(--text2);line-height:1.6}
+
+/* ── Footer ── */
+footer{text-align:center;padding:24px;font-size:12px;color:var(--text3);border-top:1px solid var(--border)}
+footer a{color:var(--text3)}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo"><a href="/"><img src="/static/img/logo.png" alt="bureauq"/></a></div>
+  <div class="nav-actions">
+    {% if current_user.is_authenticated %}
+      <a href="/" class="btn btn-ghost">Dashboard</a>
+      <form action="/billing/portal" method="POST" style="display:inline">
+        <button type="submit" class="btn btn-ghost">Manage Billing</button>
+      </form>
+    {% else %}
+      <a href="/login" class="btn btn-ghost">Sign In</a>
+      <a href="/register" class="btn btn-primary">Get Started</a>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="hero">
+  <div class="trial-badge">14-day free trial · No credit card required</div>
+  <h1>Simple, transparent<br/><span>compliance pricing</span></h1>
+  <p>Screen entities, monitor sanctions, and stay ahead of compliance risks — from £49/month.</p>
+</div>
+
+{% if sub %}
+  {% if sub.status == 'trialing' and sub.trial_days_left is not none %}
+    <div class="trial-banner {% if sub.trial_days_left <= 3 %}warning{% endif %}" style="max-width:780px">
+      {% if sub.trial_days_left <= 3 %}
+        ⚠ Your free trial ends in <strong>{{ sub.trial_days_left }} day{{ 's' if sub.trial_days_left != 1 }}</strong>. Add a payment method to keep access.
+      {% else %}
+        ℹ You're on a free trial — <strong>{{ sub.trial_days_left }} days remaining</strong>. Subscribe below to continue after your trial.
+      {% endif %}
+    </div>
+  {% elif sub.status == 'expired' %}
+    <div class="trial-banner expired" style="max-width:780px">
+      ⛔ Your free trial has expired. Subscribe below to regain access.
+    </div>
+  {% elif sub.status == 'past_due' %}
+    <div class="trial-banner warning" style="max-width:780px">
+      ⚠ Your last payment failed. Please update your payment method to restore access.
+      <form action="/billing/portal" method="POST" style="margin-left:auto">
+        <button type="submit" class="btn btn-primary" style="padding:6px 14px;font-size:12px">Update Payment →</button>
+      </form>
+    </div>
+  {% elif sub.status == 'active' %}
+    <div class="trial-banner" style="max-width:780px">
+      ✅ You have an active <strong>{{ sub.plan|title if sub.plan else 'Professional' }}</strong> subscription.
+      <form action="/billing/portal" method="POST" style="margin-left:auto">
+        <button type="submit" class="btn btn-ghost" style="padding:6px 14px;font-size:12px">Manage →</button>
+      </form>
+    </div>
+  {% endif %}
+{% endif %}
+
+<div class="plans">
+  {% for key, plan in plans.items() %}
+  <div class="plan-card {% if plan.highlight %}highlight{% endif %}">
+    {% if plan.highlight %}<div class="popular-badge">MOST POPULAR</div>{% endif %}
+    <div class="plan-name">{{ plan.name }}</div>
+    <div class="plan-price"><span>£</span>{{ plan.price }}</div>
+    <div class="plan-period">per month, billed monthly</div>
+    <div class="plan-desc">{{ plan.description }}</div>
+    <ul class="feature-list">
+      {% for f in plan.features %}
+      <li>{{ f }}</li>
+      {% endfor %}
+    </ul>
+    {% if current_user.is_authenticated %}
+      {% if sub and sub.status == 'active' and sub.plan == key %}
+        <div class="btn btn-ghost btn-full" style="opacity:.5;cursor:default">Current plan</div>
+      {% else %}
+        <form action="/billing/checkout/{{ key }}" method="POST">
+          <button type="submit" class="btn btn-primary btn-full">{{ plan.cta }}</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <a href="/register" class="btn btn-primary btn-full">{{ plan.cta }}</a>
+    {% endif %}
+    <div class="trial-note">14-day free trial · Cancel anytime</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="enterprise">
+  <div class="enterprise-card">
+    <div>
+      <div class="enterprise-title">Enterprise</div>
+      <div class="enterprise-desc">For large compliance teams, banks, and law firms needing custom limits, SLAs, and dedicated support.</div>
+      <div class="enterprise-features">
+        <span class="etag">Unlimited users</span>
+        <span class="etag">API access</span>
+        <span class="etag">Custom integrations</span>
+        <span class="etag">SLA guarantee</span>
+        <span class="etag">Dedicated onboarding</span>
+        <span class="etag">Custom data feeds</span>
+      </div>
+    </div>
+    <div style="flex-shrink:0">
+      <a href="mailto:hello@bureauq.com" class="btn btn-ghost" style="white-space:nowrap">Contact us →</a>
+    </div>
+  </div>
+</div>
+
+<div class="faq">
+  <h2>Common questions</h2>
+  <div class="faq-item">
+    <div class="faq-q">Do I need a credit card for the free trial?</div>
+    <div class="faq-a">Yes, we collect card details upfront to prevent abuse, but you won't be charged until your 14-day trial ends. Cancel any time before then and pay nothing.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Which sanctions lists are covered?</div>
+    <div class="faq-a">We screen against OFAC SDN, EU Consolidated List, UN Security Council, and UK FCDO — updated continuously. Enterprise plans include additional custom data feeds.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Can I change plans?</div>
+    <div class="faq-a">Yes. Upgrade or downgrade any time from the billing portal. Upgrades are prorated immediately; downgrades take effect at the next billing cycle.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">How do I cancel?</div>
+    <div class="faq-a">Click "Manage Billing" in your dashboard — you'll land on the Stripe portal where you can cancel in one click. You keep access until the end of the billing period.</div>
+  </div>
+  <div class="faq-item">
+    <div class="faq-q">Is my payment data secure?</div>
+    <div class="faq-a">Card details are handled entirely by Stripe — we never see or store your payment information. Stripe is PCI DSS Level 1 certified.</div>
+  </div>
+</div>
+
+<footer>
+  &copy; {{ now.year }} bureauq &nbsp;·&nbsp;
+  <a href="mailto:hello@bureauq.com">Contact</a> &nbsp;·&nbsp;
+  <a href="#">Privacy</a> &nbsp;·&nbsp;
+  <a href="#">Terms</a>
+</footer>
+
+</body>
+</html>

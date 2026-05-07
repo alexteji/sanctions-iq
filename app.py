@@ -5,7 +5,7 @@ import threading
 import time
 import hashlib
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, render_template, g
+from flask import Flask, jsonify, request, render_template, redirect, url_for, g
 from flask_login import login_required, current_user
 import requests
 import feedparser
@@ -90,12 +90,39 @@ def init_db():
             password_hash TEXT NOT NULL,
             role TEXT DEFAULT 'analyst',
             created_at TEXT DEFAULT (datetime('now')),
-            last_login TEXT
+            last_login TEXT,
+            stripe_customer_id TEXT,
+            stripe_subscription_id TEXT,
+            subscription_status TEXT DEFAULT 'trialing',
+            subscription_plan TEXT,
+            trial_ends_at TEXT,
+            subscription_ends_at TEXT
         );
     """)
+    _migrate_users(cur)
     _seed_demo_data(cur)
     con.commit()
-    con.close()
+
+def _migrate_users(cur):
+    """Add subscription columns to existing users table if missing."""
+    existing = {r[1] for r in cur.execute("PRAGMA table_info(users)").fetchall()}
+    additions = {
+        "stripe_customer_id":     "TEXT",
+        "stripe_subscription_id": "TEXT",
+        "subscription_status":    "TEXT DEFAULT 'trialing'",
+        "subscription_plan":      "TEXT",
+        "trial_ends_at":          "TEXT",
+        "subscription_ends_at":   "TEXT",
+    }
+    for col, typedef in additions.items():
+        if col not in existing:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
+    # Seed trial_ends_at for existing users who don't have one
+    trial_end = (datetime.utcnow() + timedelta(days=14)).isoformat()
+    cur.execute(
+        "UPDATE users SET trial_ends_at=? WHERE trial_ends_at IS NULL",
+        (trial_end,)
+    )
 
 def _seed_demo_data(cur):
     cur.execute("SELECT COUNT(*) FROM alerts")
@@ -221,7 +248,8 @@ def _background_refresh():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html", user=current_user)
+    sub = get_subscription(current_user.id)
+    return render_template("index.html", user=current_user, sub=sub)
 
 @login_required
 @app.route("/api/stats")
@@ -457,14 +485,37 @@ def api_me():
         "role": current_user.role,
     })
 
-# ─── Auth wiring ──────────────────────────────────────────────────────────────
+# ─── Auth & billing wiring ────────────────────────────────────────────────────
 
 from auth import auth_bp, login_manager
+from billing import billing_bp, subscription_active, get_subscription
 
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
 login_manager.login_message = None
 app.register_blueprint(auth_bp)
+app.register_blueprint(billing_bp)
+
+@app.context_processor
+def inject_now():
+    return {"now": datetime.utcnow()}
+
+@app.before_request
+def enforce_subscription():
+    """Block API calls and dashboard for users with no active subscription."""
+    exempt_prefixes = ("/login", "/logout", "/register", "/forgot-password",
+                       "/reset-password", "/pricing", "/billing", "/static")
+    if any(request.path.startswith(p) for p in exempt_prefixes):
+        return
+    if not current_user.is_authenticated:
+        return
+    if subscription_active(current_user.id):
+        return
+    # Subscription inactive — API gets 402, dashboard gets redirect
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "subscription_required",
+                        "upgrade_url": "/pricing"}), 402
+    return redirect(url_for("billing.pricing"))
 
 def create_app():
     init_db()

@@ -165,10 +165,11 @@ def register():
         elif User.get_by_email(email):
             error = "An account with that email already exists."
         else:
+            trial_ends_at = (datetime.utcnow() + timedelta(days=14)).isoformat()
             con = sqlite3.connect(DB_PATH)
             con.execute(
-                "INSERT INTO users(email, name, password_hash, role) VALUES(?,?,?,?)",
-                (email, name, generate_password_hash(password, method="pbkdf2:sha256"), "analyst")
+                "INSERT INTO users(email, name, password_hash, role, trial_ends_at) VALUES(?,?,?,?,?)",
+                (email, name, generate_password_hash(password, method="pbkdf2:sha256"), "analyst", trial_ends_at)
             )
             con.commit()
             row = User.get_by_email(email)
