@@ -76,12 +76,12 @@ def _send_reset_email(to_email, reset_url):
     import requests as _requests
 
     api_key = os.getenv("RESEND_API_KEY", "")
-    from_addr = os.getenv("RESEND_FROM", "SanctionsIQ <noreply@sanctionsiq.app>")
+    from_addr = os.getenv("RESEND_FROM", "bureauq <noreply@bureauq.app>")
 
     html_body = f"""
     <div style="font-family:-apple-system,sans-serif;max-width:520px;margin:40px auto;background:#111520;border:1px solid #2a3050;border-radius:10px;overflow:hidden">
       <div style="background:linear-gradient(135deg,#3b82f6,#6366f1);padding:28px 32px">
-        <div style="font-size:22px;font-weight:700;color:#fff">&#9878; SanctionsIQ</div>
+        <div style="font-size:22px;font-weight:700;color:#fff">&#9878; bureauq</div>
         <div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:4px">Password Reset Request</div>
       </div>
       <div style="padding:32px;color:#e2e8f0">
@@ -102,7 +102,7 @@ def _send_reset_email(to_email, reset_url):
                 json={
                     "from": from_addr,
                     "to": [to_email],
-                    "subject": "SanctionsIQ — Reset your password",
+                    "subject": "bureauq — Reset your password",
                     "html": html_body,
                 },
                 timeout=10,

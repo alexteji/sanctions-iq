@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: sanctions-iq
+    name: bureauq
     env: python
     region: oregon
     plan: starter          # $7/mo — always-on, no spin-down
@@ -19,6 +19,6 @@ services:
       - key: RESEND_API_KEY
         sync: false           # You'll paste this in the Render dashboard
       - key: RESEND_FROM
-        sync: false           # e.g. "SanctionsIQ <noreply@yourdomain.com>"
+        sync: false           # e.g. "bureauq <noreply@yourdomain.com>"
       - key: PYTHON_VERSION
         value: "3.11.0"
