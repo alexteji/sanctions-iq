@@ -404,6 +404,34 @@ def manual_vessel_check(vid):
     ).start()
     return jsonify({"ok": True, "message": f"Checking '{row['name']}'..."})
 
+@vessel_bp.route("/api/vessels/map", methods=["GET"])
+@login_required
+def vessels_map():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM vessel_monitoring WHERE active=1 AND user_id=?",
+        (current_user.id,)
+    ).fetchall()
+    con.close()
+    result = []
+    for r in rows:
+        pos = json.loads(r["last_position"]) if r["last_position"] else {}
+        if not pos.get("lat") or not pos.get("lon"):
+            continue
+        flag = (r["flag"] or "").upper()[:2]
+        flagged = flag in HIGH_RISK_FLAGS
+        result.append({
+            "id": r["id"], "name": r["name"],
+            "imo": r["imo"], "mmsi": r["mmsi"], "flag": r["flag"],
+            "lat": pos.get("lat"), "lon": pos.get("lon"),
+            "speed": pos.get("speed"), "heading": pos.get("heading"),
+            "destination": pos.get("destination"),
+            "last_port": pos.get("last_port"),
+            "flagged": flagged,
+        })
+    return jsonify(result)
+
 @vessel_bp.route("/api/vessels/<int:vid>/position", methods=["GET"])
 @login_required
 def vessel_position(vid):

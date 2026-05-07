@@ -579,6 +579,42 @@ def api_me():
         "role": current_user.role,
     })
 
+@app.route("/api/map/refresh", methods=["POST"])
+@login_required
+def api_map_refresh():
+    """Fetch fresh AIS/ADS-B positions for all tracked vessels and aircraft."""
+    from vessel_tracking import get_vessel_position, _update_position as _vup
+    from aircraft_tracking import get_aircraft_position, _update_position as _aup
+    import threading
+    def _refresh():
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        vessels = con.execute(
+            "SELECT id, mmsi FROM vessel_monitoring WHERE active=1 AND user_id=? AND mmsi IS NOT NULL AND mmsi != ''",
+            (current_user.id,)
+        ).fetchall()
+        aircraft = con.execute(
+            "SELECT id, icao24 FROM aircraft_monitoring WHERE active=1 AND user_id=? AND icao24 IS NOT NULL AND icao24 != ''",
+            (current_user.id,)
+        ).fetchall()
+        con.close()
+        for v in vessels:
+            try:
+                pos = get_vessel_position(v["mmsi"])
+                if pos:
+                    _vup("vessel_monitoring", v["id"], pos)
+            except Exception:
+                pass
+        for a in aircraft:
+            try:
+                pos = get_aircraft_position(a["icao24"])
+                if pos:
+                    _aup("aircraft_monitoring", a["id"], pos)
+            except Exception:
+                pass
+    threading.Thread(target=_refresh, daemon=True).start()
+    return jsonify({"ok": True, "message": "Refreshing positions in background…"})
+
 # ─── Auth & billing wiring ────────────────────────────────────────────────────
 
 from auth import auth_bp, login_manager

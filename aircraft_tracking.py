@@ -428,6 +428,36 @@ def manual_aircraft_check(aid):
     ).start()
     return jsonify({"ok": True, "message": f"Checking '{row['name']}'..."})
 
+@aircraft_bp.route("/api/aircraft/map", methods=["GET"])
+@login_required
+def aircraft_map():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute(
+        "SELECT * FROM aircraft_monitoring WHERE active=1 AND user_id=?",
+        (current_user.id,)
+    ).fetchall()
+    con.close()
+    result = []
+    for r in rows:
+        pos = json.loads(r["last_position"]) if r["last_position"] else {}
+        if not pos.get("lat") or not pos.get("lon"):
+            continue
+        icao_prefix = (r["icao24"] or "")[:2].lower()
+        flagged = icao_prefix in SANCTIONED_ICAO_PREFIXES
+        result.append({
+            "id": r["id"], "name": r["name"],
+            "registration": r["registration"], "icao24": r["icao24"],
+            "lat": pos.get("lat"), "lon": pos.get("lon"),
+            "altitude_ft": pos.get("altitude_ft"),
+            "speed_kts": pos.get("speed_kts"),
+            "heading": pos.get("heading"),
+            "callsign": pos.get("callsign"),
+            "on_ground": pos.get("on_ground"),
+            "flagged": flagged,
+        })
+    return jsonify(result)
+
 @aircraft_bp.route("/api/aircraft/<int:aid>/position", methods=["GET"])
 @login_required
 def aircraft_position(aid):

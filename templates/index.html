@@ -5,6 +5,27 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>bureauq — Global Compliance Monitor</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+#leaflet-map{height:100%;width:100%;border-radius:var(--radius);z-index:1}
+.map-wrap{height:calc(100vh - 120px);border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.leaflet-popup-content-wrapper{background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;box-shadow:var(--shadow)}
+.leaflet-popup-tip{background:var(--surface)}
+.leaflet-popup-content{margin:12px 14px;font-size:13px}
+.map-popup-name{font-weight:700;font-size:14px;margin-bottom:6px}
+.map-popup-row{display:flex;justify-content:space-between;gap:12px;color:var(--text2);font-size:12px;margin-top:3px}
+.map-popup-row span:first-child{color:var(--text3)}
+.map-marker-vessel{font-size:20px;line-height:1;transform-origin:center;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
+.map-marker-aircraft{font-size:18px;line-height:1;transform-origin:center;display:block;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))}
+.map-controls{position:absolute;top:12px;right:12px;z-index:1000;display:flex;flex-direction:column;gap:6px}
+.map-ctrl-btn{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
+.map-ctrl-btn:hover{background:var(--surface2)}
+.map-ctrl-btn.active{border-color:var(--accent);color:var(--accent)}
+.map-legend{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 12px;position:absolute;bottom:30px;left:12px;z-index:1000;font-size:11px;color:var(--text2)}
+.map-legend-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.map-legend-dot{width:10px;height:10px;border-radius:50%}
+</style>
 <style>
 :root{
   --bg:#0a0d14;--surface:#111520;--surface2:#1a1f2e;--surface3:#222840;
@@ -256,6 +277,9 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
     <button class="nav-item" onclick="showPage('aircraft')">
       <span class="nav-icon">✈️</span> Aircraft Tracking
       <span class="nav-badge" id="aircraft-badge" style="display:none">0</span>
+    </button>
+    <button class="nav-item" onclick="showPage('livemap')">
+      <span class="nav-icon">🗺️</span> Live Map
     </button>
     <button class="nav-item" onclick="showPage('entities')">
       <span class="nav-icon">🗃</span> Sanctions Lists
@@ -552,6 +576,30 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
       </div>
     </div>
 
+    <!-- ── Live Map ── -->
+    <div id="page-livemap" class="page">
+      <div class="section-header">
+        <span class="section-title">Live Map</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-ghost btn-sm" id="map-toggle-vessels" onclick="toggleMapLayer('vessels')" style="border-color:var(--accent);color:var(--accent)">🚢 Vessels</button>
+          <button class="btn btn-ghost btn-sm" id="map-toggle-aircraft" onclick="toggleMapLayer('aircraft')" style="border-color:var(--accent2);color:var(--accent2)">✈️ Aircraft</button>
+          <button class="btn btn-primary btn-sm" onclick="refreshMapPositions()">↻ Refresh</button>
+        </div>
+      </div>
+      <div style="position:relative">
+        <div class="map-wrap">
+          <div id="leaflet-map"></div>
+        </div>
+        <div class="map-legend">
+          <div class="map-legend-row"><div class="map-legend-dot" style="background:#3b82f6"></div> Clean vessel</div>
+          <div class="map-legend-row"><div class="map-legend-dot" style="background:#ef4444"></div> Flagged vessel</div>
+          <div class="map-legend-row"><div class="map-legend-dot" style="background:#a855f7"></div> Aircraft</div>
+          <div class="map-legend-row"><div class="map-legend-dot" style="background:#ef4444"></div> Flagged aircraft</div>
+        </div>
+      </div>
+      <div id="map-status" style="margin-top:10px;font-size:12px;color:var(--text3)">Loading positions…</div>
+    </div>
+
     <!-- ── Entities ── -->
     <div id="page-entities" class="page">
       <div class="section-header">
@@ -770,7 +818,7 @@ function showPage(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',vessels:'Vessel Tracking (AIS)',aircraft:'Aircraft Tracking (ADS-B)',datasources:'Data Sources & Sync',entities:'Sanctions Lists',countries:'Country Risk'};
+  const titles = {dashboard:'Dashboard',screen:'Entity Screening',alerts:'Compliance Alerts',news:'Live News Feed',watchlist:'Watchlist',monitoring:'Live Monitoring',vessels:'Vessel Tracking (AIS)',aircraft:'Aircraft Tracking (ADS-B)',livemap:'Live Map',datasources:'Data Sources & Sync',entities:'Sanctions Lists',countries:'Country Risk'};
   document.getElementById('topbar-title').textContent = titles[name] || name;
   // Activate nav item
   document.querySelectorAll('.nav-item').forEach(n => {
@@ -782,6 +830,7 @@ function showPage(name) {
   if (name === 'monitoring') loadMonitoring();
   if (name === 'vessels') loadVessels();
   if (name === 'aircraft') loadAircraft();
+  if (name === 'livemap') initLiveMap();
   if (name === 'datasources') loadDataSources();
   if (name === 'entities') loadEntities();
   if (name === 'countries') loadCountries();
@@ -1607,6 +1656,131 @@ async function viewHits(mid, name) {
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
+// ─── Live Map ─────────────────────────────────────────────────────────────────
+let _map = null, _vesselLayer = null, _aircraftLayer = null;
+let _showVessels = true, _showAircraft = true;
+let _mapRefreshTimer = null;
+
+function initLiveMap() {
+  if (!_map) {
+    _map = L.map('leaflet-map', {zoomControl:true}).setView([20, 10], 3);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution:'&copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains:'abcd', maxZoom:19
+    }).addTo(_map);
+    _vesselLayer  = L.layerGroup().addTo(_map);
+    _aircraftLayer = L.layerGroup().addTo(_map);
+  } else {
+    _map.invalidateSize();
+  }
+  loadMapData();
+  clearInterval(_mapRefreshTimer);
+  _mapRefreshTimer = setInterval(loadMapData, 60000);
+}
+
+function vesselIcon(heading, flagged) {
+  const color = flagged ? '#ef4444' : '#3b82f6';
+  const rot = heading || 0;
+  return L.divIcon({
+    className:'',
+    html:`<div style="transform:rotate(${rot}deg);transform-origin:center;line-height:1;font-size:22px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7))"><svg width="22" height="22" viewBox="0 0 24 24" fill="${color}" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L7 10H4L12 22L20 10H17L12 2Z"/></svg></div>`,
+    iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-14]
+  });
+}
+
+function aircraftIcon(heading, flagged) {
+  const color = flagged ? '#ef4444' : '#a855f7';
+  const rot = (heading || 0) - 90;
+  return L.divIcon({
+    className:'',
+    html:`<div style="transform:rotate(${rot}deg);transform-origin:center;line-height:1;font-size:20px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7))"><svg width="22" height="22" viewBox="0 0 24 24" fill="${color}" xmlns="http://www.w3.org/2000/svg"><path d="M21 16L13 12V4.5C13 3.67 12.33 3 11.5 3S10 3.67 10 4.5V12L2 16V18L10 15.5V20L8 21.5V23L11.5 22L15 23V21.5L13 20V15.5L21 18V16Z"/></svg></div>`,
+    iconSize:[22,22], iconAnchor:[11,11], popupAnchor:[0,-14]
+  });
+}
+
+async function loadMapData() {
+  if (!_map) return;
+  try {
+    const [vRes, aRes] = await Promise.all([
+      fetch('/api/vessels/map').then(r=>r.json()),
+      fetch('/api/aircraft/map').then(r=>r.json())
+    ]);
+    _vesselLayer.clearLayers();
+    _aircraftLayer.clearLayers();
+    let vCount = 0, aCount = 0;
+    const bounds = [];
+
+    (vRes || []).forEach(v => {
+      if (!v.lat || !v.lon) return;
+      vCount++;
+      bounds.push([v.lat, v.lon]);
+      const flagged = v.flagged || false;
+      const marker = L.marker([v.lat, v.lon], {icon: vesselIcon(v.heading, flagged)});
+      marker.bindPopup(`
+        <div class="map-popup-name">🚢 ${v.name}</div>
+        ${v.flag ? `<div class="map-popup-row"><span>Flag</span><span>${v.flag}</span></div>` : ''}
+        ${v.speed != null ? `<div class="map-popup-row"><span>Speed</span><span>${v.speed} kn</span></div>` : ''}
+        ${v.heading != null ? `<div class="map-popup-row"><span>Heading</span><span>${v.heading}°</span></div>` : ''}
+        ${v.destination ? `<div class="map-popup-row"><span>Destination</span><span>${v.destination}</span></div>` : ''}
+        ${v.imo ? `<div class="map-popup-row"><span>IMO</span><span>${v.imo}</span></div>` : ''}
+        <div style="margin-top:8px"><a href="#" onclick="showPage('vessels');return false" style="font-size:11px">View in Vessel Tracking →</a></div>
+      `);
+      _vesselLayer.addLayer(marker);
+    });
+
+    (aRes || []).forEach(a => {
+      if (!a.lat || !a.lon) return;
+      aCount++;
+      bounds.push([a.lat, a.lon]);
+      const flagged = a.flagged || false;
+      const marker = L.marker([a.lat, a.lon], {icon: aircraftIcon(a.heading, flagged)});
+      marker.bindPopup(`
+        <div class="map-popup-name">✈️ ${a.name}</div>
+        ${a.callsign ? `<div class="map-popup-row"><span>Callsign</span><span>${a.callsign}</span></div>` : ''}
+        ${a.altitude_ft != null ? `<div class="map-popup-row"><span>Altitude</span><span>${Math.round(a.altitude_ft).toLocaleString()} ft</span></div>` : ''}
+        ${a.speed_kts != null ? `<div class="map-popup-row"><span>Speed</span><span>${Math.round(a.speed_kts)} kts</span></div>` : ''}
+        ${a.heading != null ? `<div class="map-popup-row"><span>Heading</span><span>${a.heading}°</span></div>` : ''}
+        ${a.on_ground ? `<div class="map-popup-row"><span>Status</span><span>On ground</span></div>` : ''}
+        ${a.registration ? `<div class="map-popup-row"><span>Reg</span><span>${a.registration}</span></div>` : ''}
+        <div style="margin-top:8px"><a href="#" onclick="showPage('aircraft');return false" style="font-size:11px">View in Aircraft Tracking →</a></div>
+      `);
+      _aircraftLayer.addLayer(marker);
+    });
+
+    if (bounds.length > 0) {
+      _map.fitBounds(bounds, {padding:[40,40], maxZoom:8});
+    }
+
+    const now = new Date().toUTCString().replace('GMT','UTC');
+    document.getElementById('map-status').textContent =
+      `${vCount} vessel${vCount!==1?'s':''} · ${aCount} aircraft · Updated ${now}`;
+  } catch(e) {
+    document.getElementById('map-status').textContent = 'Error loading positions — ' + e.message;
+  }
+}
+
+async function refreshMapPositions() {
+  document.getElementById('map-status').textContent = 'Fetching fresh positions…';
+  try {
+    await fetch('/api/map/refresh', {method:'POST'});
+  } catch(e) {}
+  await loadMapData();
+}
+
+function toggleMapLayer(layer) {
+  if (layer === 'vessels') {
+    _showVessels = !_showVessels;
+    const btn = document.getElementById('map-toggle-vessels');
+    if (_showVessels) { _map.addLayer(_vesselLayer); btn.style.opacity='1'; }
+    else { _map.removeLayer(_vesselLayer); btn.style.opacity='.4'; }
+  } else {
+    _showAircraft = !_showAircraft;
+    const btn = document.getElementById('map-toggle-aircraft');
+    if (_showAircraft) { _map.addLayer(_aircraftLayer); btn.style.opacity='1'; }
+    else { _map.removeLayer(_aircraftLayer); btn.style.opacity='.4'; }
+  }
+}
+
 // Apply saved theme before first render
 if (localStorage.getItem('theme') === 'light') {
   document.body.classList.add('light');
