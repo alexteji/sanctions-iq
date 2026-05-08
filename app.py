@@ -1,17 +1,142 @@
+import csv
+import io
 import os
 import json
+import re
 import sqlite3
 import threading
 import time
 import hashlib
+import unicodedata
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, request, render_template, redirect, url_for, g
+from flask import Flask, jsonify, request, render_template, redirect, url_for, g, Response
 from flask_login import login_required, current_user
 import requests
 import feedparser
 from dateutil import parser as date_parser
 from utils import fetch_feed
 
+# ─── Fuzzy matching & risk scoring ───────────────────────────────────────────
+
+# Sanctions list severity weights (0–100)
+_LIST_WEIGHT = {
+    'OFAC SDN': 100,
+    'OFAC DPRK': 95,
+    'OFAC Non-SDN': 90,
+    'OFAC SSI (Sectoral)': 88,
+    'OFAC FSE (Evaders)': 87,
+    'OFAC GLOMAG': 86,
+    'OFAC CAPTA': 80,
+    'OFAC NS-ISA': 80,
+    'OFAC NS-MBS': 75,
+    'OFAC HKAO (HK)': 75,
+    'UNSC': 92,
+    'Interpol Red Notices': 85,
+    'EU Consolidated': 85,
+    'UK OFSI': 82,
+    'Canada GAC': 78,
+    'Australia DFAT': 76,
+    'BIS Entity List': 72,
+    'BIS Denied Persons': 68,
+    'World Bank Debarment': 62,
+    'BIS Unverified List': 52,
+}
+
+def _norm(s):
+    """Normalize a name for matching: lowercase, strip diacritics, collapse whitespace."""
+    s = (s or '').lower()
+    s = unicodedata.normalize('NFD', s)
+    s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')  # remove combining chars
+    # strip Arabic/name particles that often vary
+    s = re.sub(r'\b(al|el|bin|bint|abu|ibn|van|de|von|del|der|le|la)\b', ' ', s)
+    s = re.sub(r"['\-,\.\(\)]", ' ', s)
+    s = re.sub(r'[^a-z0-9 ]', '', s)
+    return ' '.join(s.split())
+
+def _match_score(query, name, aliases=''):
+    """Return best similarity score 0.0–1.0 between query and entity name/aliases."""
+    q = _norm(query)
+    if not q:
+        return 0.0
+    targets = [_norm(name)] + [_norm(a) for a in (aliases or '').split(';') if a.strip()]
+    best = 0.0
+    q_words = set(q.split())
+    for t in targets:
+        if not t:
+            continue
+        if q == t:
+            return 1.0
+        ratio = SequenceMatcher(None, q, t).ratio()
+        t_words = set(t.split())
+        if q_words and q_words.issubset(t_words):
+            ratio = max(ratio, 0.92)
+        elif q_words and q_words & t_words:
+            overlap = len(q_words & t_words) / len(q_words)
+            ratio = max(ratio, 0.45 + overlap * 0.4)
+        best = max(best, ratio)
+    return best
+
+def _risk_score(list_name, match_score):
+    base = _LIST_WEIGHT.get(list_name) or next(
+        (v for k, v in _LIST_WEIGHT.items() if list_name.startswith(k.split()[0])), 60
+    )
+    return round(base * match_score)
+
+def _risk_level(score):
+    if score >= 80: return 'critical'
+    if score >= 60: return 'high'
+    if score >= 35: return 'medium'
+    return 'low'
+
+def _screen_name(query, db, min_score=0.45, limit=200):
+    """Core screening — returns scored, sorted results with fuzzy matching."""
+    q_lower = query.lower()
+    words = [w for w in q_lower.split() if len(w) > 1] or q_lower.split()
+
+    # Primary: all words must appear (precision first)
+    and_clauses = ' AND '.join(['(lower(name) LIKE ? OR lower(aliases) LIKE ?)'] * len(words))
+    and_params = [p for w in words for p in (f'%{w}%', f'%{w}%')]
+    rows = db.execute(
+        f'SELECT * FROM sanctions_entities WHERE {and_clauses} LIMIT 500', and_params
+    ).fetchall()
+
+    seen = {r['id'] for r in rows}
+
+    # Secondary: any word matches (recall — catches partial name variants)
+    if len(rows) < 15:
+        or_clauses = ' OR '.join(['(lower(name) LIKE ? OR lower(aliases) LIKE ?)'] * len(words))
+        or_params = [p for w in words for p in (f'%{w}%', f'%{w}%')]
+        extra = db.execute(
+            f'SELECT * FROM sanctions_entities WHERE {or_clauses} LIMIT 500', or_params
+        ).fetchall()
+        rows = list(rows) + [r for r in extra if r['id'] not in seen]
+
+    results = []
+    for r in rows:
+        score = _match_score(query, r['name'], r['aliases'] or '')
+        if score < min_score:
+            continue
+        risk = _risk_score(r['list_name'], score)
+        results.append({
+            'id':               r['id'],
+            'list_name':        r['list_name'],
+            'entity_type':      r['entity_type'],
+            'name':             r['name'],
+            'aliases':          [a for a in (r['aliases'] or '').split(';') if a],
+            'country':          r['country'],
+            'program':          r['program'],
+            'designation_date': r['designation_date'],
+            'details':          json.loads(r['details']) if r['details'] else {},
+            'match_score':      round(score, 3),
+            'risk_score':       risk,
+            'risk_level':       _risk_level(risk),
+        })
+
+    results.sort(key=lambda x: x['risk_score'], reverse=True)
+    return results[:limit]
+
+# ─────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", os.urandom(32).hex())
 # On Render the persistent disk is mounted at /data; fall back to local path for dev
@@ -396,41 +521,14 @@ def api_stats():
 @app.route("/api/screen", methods=["POST"])
 @login_required
 def api_screen():
-    data = request.get_json(force=True)
+    data  = request.get_json(force=True)
     query = (data.get("query") or "").strip()
     if not query or len(query) < 2:
         return jsonify({"error": "Query too short"}), 400
-    db = get_db()
-    q_lower = query.lower()
-    # Use significant words only (skip very short words that cause noise)
-    words = [w for w in q_lower.split() if len(w) > 1] or q_lower.split()
-    like_clauses = " AND ".join(
-        ["(lower(name) LIKE ? OR lower(aliases) LIKE ?)"] * len(words)
-    )
-    params = []
-    for w in words:
-        params += [f"%{w}%", f"%{w}%"]
-    rows = db.execute(
-        f"SELECT * FROM sanctions_entities WHERE {like_clauses} LIMIT 200",
-        params,
-    ).fetchall()
-    results = []
-    for r in rows:
-        results.append({
-            "id":               r["id"],
-            "list_name":        r["list_name"],
-            "entity_type":      r["entity_type"],
-            "name":             r["name"],
-            "aliases":          r["aliases"].split(";") if r["aliases"] else [],
-            "country":          r["country"],
-            "program":          r["program"],
-            "designation_date": r["designation_date"],
-            "details":          json.loads(r["details"]) if r["details"] else {},
-        })
-    # Dynamically record which lists were actually checked
-    list_rows = db.execute(
-        "SELECT DISTINCT list_name FROM sanctions_entities"
-    ).fetchall()
+    db      = get_db()
+    results = _screen_name(query, db)
+
+    list_rows     = db.execute("SELECT DISTINCT list_name FROM sanctions_entities").fetchall()
     lists_checked = ",".join(r["list_name"] for r in list_rows)
     db.execute(
         "INSERT INTO screen_history(query,result_count,lists_checked) VALUES(?,?,?)",
@@ -438,6 +536,88 @@ def api_screen():
     )
     db.commit()
     return jsonify({"query": query, "hits": len(results), "results": results})
+
+
+@login_required
+@app.route("/api/screen/bulk", methods=["POST"])
+@login_required
+def api_screen_bulk():
+    data  = request.get_json(force=True)
+    names = [n.strip() for n in (data.get("names") or []) if n.strip()]
+    if not names:
+        return jsonify({"error": "No names provided"}), 400
+    if len(names) > 500:
+        return jsonify({"error": "Maximum 500 names per batch"}), 400
+
+    db      = get_db()
+    results = []
+    _risk_order = {"critical": 3, "high": 2, "medium": 1, "low": 0, "none": -1}
+
+    for name in names:
+        hits = _screen_name(name, db, limit=10)
+        top_level = max((h["risk_level"] for h in hits), key=lambda x: _risk_order.get(x, -1), default="none")
+        results.append({
+            "query":      name,
+            "hits":       len(hits),
+            "risk_level": top_level if hits else "none",
+            "top_match":  hits[0] if hits else None,
+        })
+
+    # Log bulk screen
+    total_hits = sum(r["hits"] for r in results)
+    list_rows  = db.execute("SELECT DISTINCT list_name FROM sanctions_entities").fetchall()
+    db.execute(
+        "INSERT INTO screen_history(query,result_count,lists_checked) VALUES(?,?,?)",
+        (f"[BULK:{len(names)}]", total_hits,
+         ",".join(r["list_name"] for r in list_rows)),
+    )
+    db.commit()
+
+    flagged = [r for r in results if r["hits"] > 0]
+    return jsonify({
+        "total_screened": len(names),
+        "total_hits":     total_hits,
+        "flagged":        len(flagged),
+        "results":        results,
+    })
+
+
+@login_required
+@app.route("/api/screen/export")
+@login_required
+def api_screen_export():
+    query = (request.args.get("query") or "").strip()
+    if not query or len(query) < 2:
+        return jsonify({"error": "query param required"}), 400
+
+    db      = get_db()
+    results = _screen_name(query, db)
+    screened_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    buf = io.StringIO()
+    w   = csv.writer(buf)
+    w.writerow([
+        "Query", "List", "Entity Type", "Name", "Aliases", "Country",
+        "Program", "Designation Date", "Risk Level", "Risk Score",
+        "Match Confidence %", "Screened At",
+    ])
+    for r in results:
+        w.writerow([
+            query, r["list_name"], r["entity_type"], r["name"],
+            "; ".join(r["aliases"]),
+            r["country"], r["program"], r["designation_date"],
+            r["risk_level"], r["risk_score"],
+            f"{round(r['match_score'] * 100)}",
+            screened_at,
+        ])
+
+    safe = re.sub(r'[^a-zA-Z0-9_-]', '_', query)[:40]
+    date = datetime.utcnow().strftime("%Y%m%d")
+    return Response(
+        buf.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=screen_{safe}_{date}.csv"},
+    )
 
 @login_required
 @app.route("/api/alerts")

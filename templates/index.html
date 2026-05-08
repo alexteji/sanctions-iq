@@ -111,6 +111,11 @@ nav{flex:1;padding:12px 8px}
 .badge-eu{background:rgba(99,102,241,.2);color:#818cf8}
 .badge-un{background:rgba(234,179,8,.2);color:var(--yellow)}
 .badge-uk{background:rgba(16,185,129,.2);color:var(--accent3)}
+.badge-bis{background:rgba(249,115,22,.2);color:var(--orange)}
+.badge-ca{background:rgba(239,68,68,.15);color:#f87171}
+.badge-au{background:rgba(59,130,246,.2);color:#60a5fa}
+.badge-wb{background:rgba(16,185,129,.15);color:#34d399}
+.badge-interpol{background:rgba(139,92,246,.2);color:#a78bfa}
 .result-name{font-size:14px;font-weight:600;margin-bottom:4px}
 .result-meta{font-size:12px;color:var(--text2);display:flex;gap:12px;flex-wrap:wrap}
 .result-aliases{font-size:11px;color:var(--text3);margin-top:4px}
@@ -389,22 +394,37 @@ body.light .modal-backdrop{background:rgba(0,0,0,.4)}
     <div id="page-screen" class="page">
       <div class="screen-box">
         <div class="card-header" style="margin-bottom:12px">
-          <div><div class="card-title">Entity Screening</div><div class="card-subtitle">Screen individuals and entities against global sanctions lists</div></div>
+          <div><div class="card-title">Entity Screening</div><div class="card-subtitle">Fuzzy-matched search across 13 global sanctions &amp; debarment lists</div></div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" id="mode-single" onclick="setScreenMode('single')" style="border-color:var(--accent);color:var(--accent)">Single</button>
+            <button class="btn btn-ghost btn-sm" id="mode-bulk"   onclick="setScreenMode('bulk')">Bulk</button>
+          </div>
         </div>
-        <div class="screen-input-row">
-          <input class="screen-input" id="screen-query" type="text" placeholder="Enter name, company, alias… e.g. 'Rosneft' or 'Putin'" onkeydown="if(event.key==='Enter')doScreen()"/>
-          <button class="btn btn-primary" onclick="doScreen()">Screen</button>
+
+        <!-- Single mode -->
+        <div id="screen-mode-single">
+          <div class="screen-input-row">
+            <input class="screen-input" id="screen-query" type="text" placeholder="Enter name, company, alias… e.g. 'Rosneft' or 'Putin'" onkeydown="if(event.key==='Enter')doScreen()"/>
+            <button class="btn btn-primary" onclick="doScreen()">Screen</button>
+          </div>
+          <div class="screen-filters">
+            <span style="font-size:12px;color:var(--text3);padding:4px 0">13 lists active — OFAC, EU, UN, UK, BIS, Interpol, World Bank &amp; more</span>
+          </div>
         </div>
-        <div class="screen-filters">
-          <span style="font-size:12px;color:var(--text3);padding:4px 0">Lists:</span>
-          <span class="filter-chip active" data-list="ofac">OFAC SDN</span>
-          <span class="filter-chip active" data-list="eu">EU Consolidated</span>
-          <span class="filter-chip active" data-list="un">UN Security Council</span>
-          <span class="filter-chip active" data-list="uk">UK FCDO</span>
+
+        <!-- Bulk mode -->
+        <div id="screen-mode-bulk" style="display:none">
+          <textarea id="bulk-names" placeholder="Enter one name per line (up to 500)&#10;e.g.&#10;Rosneft&#10;Vladimir Putin&#10;Wagner Group" style="width:100%;height:160px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px;font-size:13px;resize:vertical;font-family:inherit"></textarea>
+          <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+            <button class="btn btn-primary" onclick="doBulkScreen()">Screen All</button>
+            <span style="font-size:12px;color:var(--text3)" id="bulk-count">0 names entered</span>
+          </div>
         </div>
       </div>
+
       <div id="screen-results"></div>
       <div id="pep-results" style="margin-top:16px"></div>
+
       <div style="margin-top:24px">
         <div class="section-header"><span class="section-title">Recent Screens</span></div>
         <div id="screen-history-list"></div>
@@ -912,46 +932,226 @@ async function loadDashboard() {
 }
 
 // ─── Screening ───────────────────────────────────────────────────────────────
+// ─── Screening mode toggle ────────────────────────────────────────────────────
+function setScreenMode(mode) {
+  document.getElementById('screen-mode-single').style.display = mode === 'single' ? '' : 'none';
+  document.getElementById('screen-mode-bulk').style.display   = mode === 'bulk'   ? '' : 'none';
+  document.getElementById('mode-single').style.borderColor = mode === 'single' ? 'var(--accent)' : '';
+  document.getElementById('mode-single').style.color       = mode === 'single' ? 'var(--accent)' : '';
+  document.getElementById('mode-bulk').style.borderColor   = mode === 'bulk'   ? 'var(--accent)' : '';
+  document.getElementById('mode-bulk').style.color         = mode === 'bulk'   ? 'var(--accent)' : '';
+  document.getElementById('screen-results').innerHTML = '';
+  document.getElementById('pep-results').innerHTML    = '';
+}
+
+// live count for bulk textarea
+document.addEventListener('DOMContentLoaded', () => {
+  const ta = document.getElementById('bulk-names');
+  if (ta) ta.addEventListener('input', () => {
+    const n = ta.value.split('\n').filter(l => l.trim()).length;
+    document.getElementById('bulk-count').textContent = n + ' name' + (n !== 1 ? 's' : '') + ' entered';
+  });
+});
+
+// ─── Risk helpers ────────────────────────────────────────────────────────────
+const RISK_COLORS = {critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--accent)',none:'var(--text3)'};
+const RISK_BG     = {critical:'rgba(239,68,68,.15)',high:'rgba(249,115,22,.15)',medium:'rgba(234,179,8,.12)',low:'rgba(59,130,246,.12)',none:'rgba(100,116,139,.1)'};
+
+function riskBadge(level, score) {
+  const col = RISK_COLORS[level] || RISK_COLORS.low;
+  const bg  = RISK_BG[level]     || RISK_BG.low;
+  return `<span style="background:${bg};color:${col};border:1px solid ${col};border-radius:5px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;flex-shrink:0">${(level||'').toUpperCase()} ${score!=null?'· '+score:''}</span>`;
+}
+
+function confBar(pct) {
+  const col = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--orange)' : pct >= 50 ? 'var(--yellow)' : 'var(--text3)';
+  return `<div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+    <div style="flex:1;max-width:80px;height:4px;background:var(--surface3);border-radius:2px">
+      <div style="width:${pct}%;height:100%;background:${col};border-radius:2px"></div>
+    </div>
+    <span style="font-size:10px;color:var(--text3)">${pct}% match</span>
+  </div>`;
+}
+
+// ─── Single screen ────────────────────────────────────────────────────────────
+let _lastScreenQuery = '';
+let _lastScreenResults = [];
+
 async function doScreen() {
   const q = document.getElementById('screen-query').value.trim();
   if (!q) return;
   const el    = document.getElementById('screen-results');
   const pepEl = document.getElementById('pep-results');
-  el.innerHTML    = '<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening against global sanctions lists…</div>';
+  el.innerHTML    = '<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening against 13 sanctions lists…</div>';
   pepEl.innerHTML = '<div style="padding:12px 0;font-size:12px;color:var(--text3)"><span class="spinner"></span> Checking PEP database…</div>';
 
-  // Run sanctions + PEP in parallel
   const [res, pepRes] = await Promise.all([
-    fetch('/api/screen', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json()),
-    fetch('/api/pep/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q})}).then(r=>r.json()),
+    fetch('/api/screen', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})}).then(r=>r.json()),
+    fetch('/api/pep/search', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:q})}).then(r=>r.json()),
   ]);
 
-  // ── Sanctions results ──
-  if (res.error) { el.innerHTML = `<div class="empty-state">${res.error}</div>`; }
-  else if (!res.results.length) {
-    el.innerHTML = `<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:20px;display:flex;align-items:center;gap:12px"><span style="font-size:24px">✅</span><div><div style="font-size:14px;font-weight:700;color:var(--green)">No Sanctions Matches</div><div style="font-size:12px;color:var(--text2);margin-top:3px">"<strong>${esc(q)}</strong>" returned no hits across OFAC SDN, EU, UNSC, and UK OFSI.</div></div></div>`;
-  } else {
-    const badgeClass = {'OFAC SDN':'badge-ofac','EU Consolidated':'badge-eu','UNSC':'badge-un','UK OFSI':'badge-uk','UK FCDO':'badge-uk'};
-    el.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px"><span style="font-size:20px">⚠️</span><div><div style="font-size:14px;font-weight:700;color:var(--red)">${res.hits} Sanctions Match${res.hits>1?'es':''} Found</div><div style="font-size:12px;color:var(--text2)">"${esc(q)}" — Immediate review required</div></div></div>` +
-      res.results.map(r => `
-        <div class="result-card hit">
-          <span class="result-badge ${badgeClass[r.list_name]||'badge-ofac'}">${esc(r.list_name)}</span>
-          <div style="flex:1">
-            <div class="result-name">${esc(r.name)}</div>
-            <div class="result-meta">
-              <span>🗺 ${esc(r.country)}</span><span>📋 ${esc(r.program)}</span>
-              <span>📅 ${r.designation_date}</span>
-              <span>${r.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</span>
-            </div>
-            ${r.aliases.length ? `<div class="result-aliases">Also known as: ${r.aliases.map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a)}</span>`).join('')}</div>` : ''}
-          </div>
-        </div>`).join('');
-  }
+  _lastScreenQuery   = q;
+  _lastScreenResults = res.results || [];
 
-  // ── PEP results ──
+  renderSanctionsResults(el, res, q);
   renderPepResults(pepEl, pepRes, q);
   loadScreenHistory();
 }
+
+function renderSanctionsResults(el, res, q) {
+  if (res.error) { el.innerHTML = `<div class="empty-state">${res.error}</div>`; return; }
+
+  const badgeClass = {
+    'OFAC SDN':'badge-ofac','OFAC Non-SDN':'badge-ofac','OFAC SSI (Sectoral)':'badge-ofac',
+    'OFAC FSE (Evaders)':'badge-ofac','OFAC GLOMAG':'badge-ofac','OFAC DPRK':'badge-ofac',
+    'OFAC CAPTA':'badge-ofac','OFAC NS-ISA':'badge-ofac','OFAC NS-MBS':'badge-ofac',
+    'OFAC HKAO (HK)':'badge-ofac',
+    'EU Consolidated':'badge-eu','UNSC':'badge-un',
+    'UK OFSI':'badge-uk','UK FCDO':'badge-uk',
+    'BIS Entity List':'badge-bis','BIS Denied Persons':'badge-bis','BIS Unverified List':'badge-bis',
+    'Canada GAC':'badge-ca','Australia DFAT':'badge-au',
+    'World Bank Debarment':'badge-wb','Interpol Red Notices':'badge-interpol',
+  };
+
+  if (!res.results || !res.results.length) {
+    el.innerHTML = `<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);border-radius:8px;padding:20px;display:flex;align-items:center;gap:12px">
+      <span style="font-size:24px">✅</span>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--green)">No Sanctions Matches</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:3px">"<strong>${esc(q)}</strong>" returned no hits across 13 lists including OFAC, EU, UNSC, UK, BIS, Interpol and more.</div>
+      </div>
+    </div>`;
+    return;
+  }
+
+  const exportBtn = `<button class="btn btn-ghost btn-sm" onclick="exportScreenCSV()" style="margin-left:auto">⬇ Export CSV</button>`;
+  el.innerHTML = `<div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.3);border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:20px">⚠️</span>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:700;color:var(--red)">${res.hits} Sanctions Match${res.hits>1?'es':''} Found</div>
+      <div style="font-size:12px;color:var(--text2)">"${esc(q)}" — Immediate review required</div>
+    </div>
+    ${exportBtn}
+  </div>` +
+  res.results.map(r => {
+    const pct = Math.round((r.match_score || 0) * 100);
+    return `
+    <div class="result-card hit">
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <span class="result-badge ${badgeClass[r.list_name]||'badge-ofac'}" style="white-space:nowrap">${esc(r.list_name)}</span>
+        ${riskBadge(r.risk_level, r.risk_score)}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div class="result-name">${esc(r.name)}</div>
+        ${confBar(pct)}
+        <div class="result-meta" style="margin-top:6px">
+          ${r.country?`<span>🗺 ${esc(r.country)}</span>`:''}
+          ${r.program?`<span>📋 ${esc(r.program)}</span>`:''}
+          ${r.designation_date?`<span>📅 ${esc(r.designation_date)}</span>`:''}
+          <span>${r.entity_type==='individual'?'👤 Individual':'🏢 Entity'}</span>
+        </div>
+        ${r.aliases&&r.aliases.length ? `<div class="result-aliases" style="margin-top:6px">AKA: ${r.aliases.slice(0,5).map(a=>`<span class="tag" style="background:var(--surface3);color:var(--text2)">${esc(a)}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── Bulk screening ───────────────────────────────────────────────────────────
+async function doBulkScreen() {
+  const raw   = document.getElementById('bulk-names').value;
+  const names = raw.split('\n').map(n => n.trim()).filter(Boolean);
+  if (!names.length) return;
+
+  const el = document.getElementById('screen-results');
+  el.innerHTML = `<div style="padding:24px;text-align:center"><span class="spinner"></span> Screening ${names.length} name${names.length>1?'s':''}…</div>`;
+  document.getElementById('pep-results').innerHTML = '';
+
+  const res = await fetch('/api/screen/bulk', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({names}),
+  }).then(r => r.json());
+
+  if (res.error) { el.innerHTML = `<div class="empty-state">${esc(res.error)}</div>`; return; }
+
+  const flagged = res.results.filter(r => r.hits > 0);
+  const levelOrder = {critical:4,high:3,medium:2,low:1,none:0};
+  const sorted = [...res.results].sort((a,b) => (levelOrder[b.risk_level]||0) - (levelOrder[a.risk_level]||0));
+
+  el.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:16px">
+      <div style="font-size:26px;font-weight:800">${res.total_screened}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Names Screened</div>
+    </div>
+    <div class="card" style="text-align:center;padding:16px;border-color:${res.flagged>0?'var(--red)':'var(--border)'}">
+      <div style="font-size:26px;font-weight:800;color:${res.flagged>0?'var(--red)':'var(--green)'}">${res.flagged}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Flagged</div>
+    </div>
+    <div class="card" style="text-align:center;padding:16px">
+      <div style="font-size:26px;font-weight:800;color:var(--green)">${res.total_screened - res.flagged}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Clear</div>
+    </div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    <span style="font-size:13px;font-weight:600">Results</span>
+    <button class="btn btn-ghost btn-sm" onclick="exportBulkCSV(${JSON.stringify(res).replace(/</g,'\\u003c')})">⬇ Export CSV</button>
+  </div>` +
+  sorted.map(r => {
+    const col = RISK_COLORS[r.risk_level] || RISK_COLORS.none;
+    const bg  = RISK_BG[r.risk_level]    || RISK_BG.none;
+    const top = r.top_match;
+    return `<div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;border:1px solid ${r.hits?'rgba(239,68,68,.25)':'var(--border)'};background:${r.hits?'rgba(239,68,68,.04)':'var(--surface)'};margin-bottom:8px">
+      <span style="font-size:16px">${r.hits?'⚠️':'✅'}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.query)}</div>
+        ${top?`<div style="font-size:11px;color:var(--text3);margin-top:2px">→ ${esc(top.name)} (${esc(top.list_name)})</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        ${r.hits ? riskBadge(r.risk_level, null) : `<span style="font-size:11px;color:var(--green)">Clear</span>`}
+        ${r.hits ? `<div style="font-size:10px;color:var(--text3);margin-top:3px">${r.hits} match${r.hits>1?'es':''}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─── CSV export (client-side) ─────────────────────────────────────────────────
+function exportScreenCSV() {
+  if (!_lastScreenResults.length) return;
+  const rows = [
+    ['Query','List','Type','Name','Aliases','Country','Program','Designation Date','Risk Level','Risk Score','Match %','Screened At'],
+    ..._lastScreenResults.map(r => [
+      _lastScreenQuery, r.list_name, r.entity_type, r.name,
+      (r.aliases||[]).join('; '), r.country, r.program,
+      r.designation_date, r.risk_level, r.risk_score,
+      Math.round((r.match_score||0)*100),
+      new Date().toISOString(),
+    ]),
+  ];
+  _downloadCSV(rows, `screen_${_lastScreenQuery.replace(/[^a-z0-9]/gi,'_').slice(0,30)}_${_datestamp()}.csv`);
+}
+
+function exportBulkCSV(res) {
+  const rows = [
+    ['Name','Hits','Risk Level','Top Match List','Top Match Name','Screened At'],
+    ...res.results.map(r => [
+      r.query, r.hits, r.risk_level,
+      r.top_match?.list_name||'', r.top_match?.name||'',
+      new Date().toISOString(),
+    ]),
+  ];
+  _downloadCSV(rows, `bulk_screen_${_datestamp()}.csv`);
+}
+
+function _downloadCSV(rows, filename) {
+  const csv = rows.map(row => row.map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([csv], {type:'text/csv'})),
+    download: filename,
+  });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function _datestamp() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
 
 function renderPepResults(el, pepRes, q) {
   if (!pepRes || pepRes.error) { el.innerHTML = ''; return; }
