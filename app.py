@@ -402,7 +402,8 @@ def api_screen():
         return jsonify({"error": "Query too short"}), 400
     db = get_db()
     q_lower = query.lower()
-    words = q_lower.split()
+    # Use significant words only (skip very short words that cause noise)
+    words = [w for w in q_lower.split() if len(w) > 1] or q_lower.split()
     like_clauses = " AND ".join(
         ["(lower(name) LIKE ? OR lower(aliases) LIKE ?)"] * len(words)
     )
@@ -410,25 +411,30 @@ def api_screen():
     for w in words:
         params += [f"%{w}%", f"%{w}%"]
     rows = db.execute(
-        f"SELECT * FROM sanctions_entities WHERE {like_clauses} LIMIT 50",
-        params
+        f"SELECT * FROM sanctions_entities WHERE {like_clauses} LIMIT 200",
+        params,
     ).fetchall()
     results = []
     for r in rows:
         results.append({
-            "id": r["id"],
-            "list_name": r["list_name"],
-            "entity_type": r["entity_type"],
-            "name": r["name"],
-            "aliases": r["aliases"].split(";") if r["aliases"] else [],
-            "country": r["country"],
-            "program": r["program"],
+            "id":               r["id"],
+            "list_name":        r["list_name"],
+            "entity_type":      r["entity_type"],
+            "name":             r["name"],
+            "aliases":          r["aliases"].split(";") if r["aliases"] else [],
+            "country":          r["country"],
+            "program":          r["program"],
             "designation_date": r["designation_date"],
-            "details": json.loads(r["details"]) if r["details"] else {},
+            "details":          json.loads(r["details"]) if r["details"] else {},
         })
+    # Dynamically record which lists were actually checked
+    list_rows = db.execute(
+        "SELECT DISTINCT list_name FROM sanctions_entities"
+    ).fetchall()
+    lists_checked = ",".join(r["list_name"] for r in list_rows)
     db.execute(
         "INSERT INTO screen_history(query,result_count,lists_checked) VALUES(?,?,?)",
-        (query, len(results), "OFAC SDN,EU Consolidated,UNSC,UK FCDO")
+        (query, len(results), lists_checked),
     )
     db.commit()
     return jsonify({"query": query, "hits": len(results), "results": results})

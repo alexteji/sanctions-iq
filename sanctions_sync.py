@@ -2,13 +2,18 @@
 Live sanctions list sync + PEP screening.
 
 Sanctions sources (all free, no key needed):
-  OFAC SDN        — https://www.treasury.gov/ofac/downloads/sdn.xml
-  UN SC           — https://scsanctions.un.org/resources/xml/en/consolidated.xml
-  UK OFSI         — https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv
-  EU FSF          — https://webgate.ec.europa.eu/fsd/fsf/  (XML)
-  World Bank      — https://finances.worldbank.org  (Socrata JSON API)
-  BIS Entity List — https://efts.bis.doc.gov  (CSV)
-  Australia DFAT  — https://www.dfat.gov.au  (XLSX, requires openpyxl)
+  OFAC SDN              — https://www.treasury.gov/ofac/downloads/sdn.xml
+  OFAC Non-SDN          — https://www.treasury.gov/ofac/downloads/consolidated/consolidated.xml
+  UN SC                 — https://scsanctions.un.org/resources/xml/en/consolidated.xml
+  UK OFSI               — https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv
+  EU FSF                — https://webgate.ec.europa.eu/fsd/fsf/  (XML)
+  World Bank Debarment  — https://finances.worldbank.org  (Socrata JSON API)
+  BIS Entity List (EL)  — https://efts.bis.doc.gov  (CSV)
+  BIS Denied Persons    — https://efts.bis.doc.gov  (CSV)
+  BIS Unverified List   — https://efts.bis.doc.gov  (CSV)
+  Australia DFAT        — https://www.dfat.gov.au  (XLSX, requires openpyxl)
+  Canada GAC            — https://www.international.gc.ca  (XML)
+  Interpol Red Notices  — https://ws-public.interpol.int  (REST JSON, paginated)
 
 PEP screening:
   OpenSanctions API — https://api.opensanctions.org
@@ -31,17 +36,23 @@ from utils import fetch_with_retry
 
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "sanctions.db"))
 
-OFAC_URL    = "https://www.treasury.gov/ofac/downloads/sdn.xml"
-UN_SC_URL   = "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
-UK_URL      = "https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv"
-EU_URL      = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
-               "xmlFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
-OS_API      = "https://api.opensanctions.org"
-WB_URL      = "https://finances.worldbank.org/resource/ezgi-7imi.json?$limit=50000"
-BIS_URL     = ("https://efts.bis.doc.gov/complete-search-of-existing-actions"
-               "?format=csv&search%5B%5D=EL")
-AU_DFAT_URL = ("https://www.dfat.gov.au/sites/default/files/"
-               "australian-sanctions-consolidated-list.xlsx")
+OFAC_URL        = "https://www.treasury.gov/ofac/downloads/sdn.xml"
+OFAC_CONS_URL   = "https://www.treasury.gov/ofac/downloads/consolidated/consolidated.xml"
+UN_SC_URL       = "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
+UK_URL          = "https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv"
+EU_URL          = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
+                   "xmlFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
+OS_API          = "https://api.opensanctions.org"
+WB_URL          = "https://finances.worldbank.org/resource/ezgi-7imi.json?$limit=50000"
+_BIS_BASE       = "https://efts.bis.doc.gov/complete-search-of-existing-actions?format=csv"
+BIS_URL         = f"{_BIS_BASE}&search%5B%5D=EL"
+BIS_DPL_URL     = f"{_BIS_BASE}&search%5B%5D=DPL"
+BIS_UVL_URL     = f"{_BIS_BASE}&search%5B%5D=UVL"
+AU_DFAT_URL     = ("https://www.dfat.gov.au/sites/default/files/"
+                   "australian-sanctions-consolidated-list.xlsx")
+CANADA_GAC_URL  = ("https://www.international.gc.ca/world-monde/assets/office_docs/"
+                   "international_relations-relations_internationales/sanctions/sema-lmse.xml")
+INTERPOL_URL    = "https://ws-public.interpol.int/notices/v1/red"
 
 # ─── Sync log helpers ─────────────────────────────────────────────────────────
 
@@ -442,6 +453,291 @@ def sync_australia_dfat():
         return 0
 
 
+# ─── OFAC Consolidated (Non-SDN) ─────────────────────────────────────────────
+
+def sync_ofac_consolidated():
+    """OFAC Non-SDN consolidated list: SSI, FSE, GLOMAG, CAPTA, NS-MBS, DPRK, etc.
+    Uses the same XML schema as the SDN list.
+    """
+    print("[sync] OFAC Non-SDN Consolidated …")
+    try:
+        resp = fetch_with_retry(OFAC_CONS_URL, timeout=120)
+        root = ET.fromstring(resp.content)
+
+        # Program-code prefix → human-readable list name
+        PROGRAM_MAP = {
+            "SSI":     "OFAC SSI (Sectoral)",
+            "FSE":     "OFAC FSE (Evaders)",
+            "CAPTA":   "OFAC CAPTA",
+            "GLOMAG":  "OFAC GLOMAG",
+            "NS-MBS":  "OFAC NS-MBS",
+            "NS-PLC":  "OFAC NS-PLC",
+            "HKAO":    "OFAC HKAO (HK)",
+            "DPRK":    "OFAC DPRK",
+            "NS-ISA":  "OFAC NS-ISA",
+        }
+
+        def _prog_label(programs):
+            for prog in programs:
+                for key, label in PROGRAM_MAP.items():
+                    if prog.startswith(key):
+                        return label
+            return "OFAC Non-SDN"
+
+        entries = []
+        for entry in root.findall("sdnEntry"):
+            last  = entry.findtext("lastName")  or ""
+            first = entry.findtext("firstName") or ""
+            name  = f"{last}, {first}".strip(", ") if first else last
+            if not name:
+                continue
+
+            sdn_type    = (entry.findtext("sdnType") or "").lower()
+            entity_type = "individual" if "individual" in sdn_type else "entity"
+
+            programs = [p.text for p in entry.findall(".//program") if p.text]
+            list_name = _prog_label(programs)
+            program   = ", ".join(programs[:3])
+
+            akas    = [a.findtext("lastName") or "" for a in entry.findall(".//aka")]
+            aliases = ";".join(filter(None, akas[:8]))
+
+            countries = [a.findtext("country") or "" for a in entry.findall(".//address")]
+            country   = next((c for c in countries if c), "")
+
+            dobs = [d.findtext("dateOfBirth") or "" for d in entry.findall(".//dateOfBirthItem")]
+            dob  = dobs[0] if dobs else ""
+
+            ids = {}
+            for id_node in entry.findall(".//id"):
+                t = id_node.findtext("idType")
+                v = id_node.findtext("idNumber")
+                if t and v:
+                    ids[t] = v
+
+            entries.append((list_name, entity_type, name, aliases, country,
+                            program, dob, json.dumps(ids)))
+
+        # Group by list_name for atomic replacement
+        from collections import defaultdict
+        by_list = defaultdict(list)
+        for e in entries:
+            by_list[e[0]].append(e)
+
+        # Delete all OFAC Non-SDN variants then re-insert
+        con = sqlite3.connect(DB_PATH)
+        con.execute(
+            "DELETE FROM sanctions_entities WHERE list_name LIKE 'OFAC %' "
+            "AND list_name != 'OFAC SDN'"
+        )
+        con.executemany(
+            "INSERT INTO sanctions_entities"
+            "(list_name,entity_type,name,aliases,country,program,designation_date,details)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            entries,
+        )
+        con.commit()
+        con.close()
+
+        _log("OFAC Non-SDN", "ok", len(entries),
+             f"lists: {', '.join(by_list.keys())}")
+        print(f"[sync] OFAC Non-SDN: {len(entries):,} records across "
+              f"{len(by_list)} sub-lists")
+        return len(entries)
+    except Exception as e:
+        _log("OFAC Non-SDN", "error", 0, str(e))
+        print(f"[sync] OFAC Non-SDN error: {e}")
+        return 0
+
+
+# ─── BIS Denied Persons + Unverified Lists ────────────────────────────────────
+
+def _sync_bis_list(url, list_name, program):
+    """Generic BIS CSV sync for DPL, UVL, MEU."""
+    print(f"[sync] {list_name} …")
+    try:
+        resp = fetch_with_retry(url, timeout=60)
+        content = resp.content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(content))
+
+        def _col(row, *candidates):
+            for c in candidates:
+                v = row.get(c, "").strip()
+                if v and v not in ("-", "N/A"):
+                    return v
+            return ""
+
+        entries = []
+        for row in reader:
+            name = _col(row, "Name", "name")
+            if not name:
+                continue
+            country    = _col(row, "Country", "country")
+            city       = _col(row, "City", "city")
+            eff_date   = _col(row, "Effective Date", "effective_date")
+            lic_req    = _col(row, "License Required", "license_required")
+            notes      = _col(row, "Country Group/ Notes", "Country Group/Notes", "notes")
+            details    = json.dumps({
+                "city": city,
+                "license_required": lic_req,
+                "notes": notes,
+            })
+            entries.append((list_name, "entity", name, "", country,
+                            program, eff_date, details))
+
+        _replace_list(list_name, entries)
+        _log(list_name, "ok", len(entries))
+        print(f"[sync] {list_name}: {len(entries):,} records")
+        return len(entries)
+    except Exception as e:
+        _log(list_name, "error", 0, str(e))
+        print(f"[sync] {list_name} error: {e}")
+        return 0
+
+
+def sync_bis_dpl():
+    return _sync_bis_list(BIS_DPL_URL, "BIS Denied Persons", "US Export Control (EAR-DPL)")
+
+
+def sync_bis_uvl():
+    return _sync_bis_list(BIS_UVL_URL, "BIS Unverified List", "US Export Control (EAR-UVL)")
+
+
+# ─── Canada Global Affairs (GAC) Autonomous Sanctions ────────────────────────
+
+def sync_canada_gac():
+    """Canada SEMA/ITAR autonomous sanctions — official XML feed from Global Affairs Canada."""
+    print("[sync] Canada GAC …")
+    try:
+        resp = fetch_with_retry(CANADA_GAC_URL, timeout=60)
+        root = ET.fromstring(resp.content)
+
+        # Strip namespaces for simpler xpath
+        def _strip_ns(tag):
+            return tag.split("}")[-1] if "}" in tag else tag
+
+        def _find_text(el, *tags):
+            for tag in tags:
+                node = el.find(".//" + tag)
+                if node is None:
+                    # try namespace-stripped search
+                    for child in el.iter():
+                        if _strip_ns(child.tag) == tag and child.text:
+                            return child.text.strip()
+                elif node.text:
+                    return node.text.strip()
+            return ""
+
+        entries = []
+        for child in root.iter():
+            tag = _strip_ns(child.tag)
+
+            if tag in ("Person", "Individual"):
+                last  = _find_text(child, "LastName", "Surname", "FamilyName")
+                first = _find_text(child, "FirstName", "GivenName", "GivenNames")
+                name  = f"{last}, {first}".strip(", ") if first else last
+                if not name:
+                    continue
+                country  = _find_text(child, "Country", "Nationality", "BirthCountry")
+                schedule = _find_text(child, "Schedule", "Item", "Regime")
+                dob      = _find_text(child, "DateOfBirth", "BirthDate", "DOB")
+                aliases  = _find_text(child, "Aliases", "OtherNames", "AlsoKnownAs")
+                entries.append(("Canada GAC", "individual", name, aliases,
+                                country, schedule, dob, "{}"))
+
+            elif tag in ("Entity", "Organization"):
+                name = _find_text(child, "EntityName", "Name", "OrganizationName")
+                if not name:
+                    continue
+                country  = _find_text(child, "Country", "Nationality")
+                schedule = _find_text(child, "Schedule", "Item", "Regime")
+                aliases  = _find_text(child, "Aliases", "OtherNames")
+                entries.append(("Canada GAC", "entity", name, aliases,
+                                country, schedule, "", "{}"))
+
+        _replace_list("Canada GAC", entries)
+        _log("Canada GAC", "ok", len(entries))
+        print(f"[sync] Canada GAC: {len(entries):,} records")
+        return len(entries)
+    except Exception as e:
+        _log("Canada GAC", "error", 0, str(e))
+        print(f"[sync] Canada GAC error: {e}")
+        return 0
+
+
+# ─── Interpol Red Notices ─────────────────────────────────────────────────────
+
+def sync_interpol_red_notices():
+    """Interpol Red Notices — public REST API, paginated (free, no key needed)."""
+    print("[sync] Interpol Red Notices …")
+    entries = []
+    page    = 1
+    per_page = 200
+    max_pages = 60  # cap at 12,000 notices
+
+    while page <= max_pages:
+        try:
+            resp = fetch_with_retry(
+                INTERPOL_URL,
+                params={"resultPerPage": per_page, "page": page},
+                max_attempts=3, timeout=20,
+            )
+            data    = resp.json()
+            notices = (data.get("_embedded") or {}).get("notices") or []
+            if not notices:
+                break
+
+            for n in notices:
+                forename = (n.get("forename") or "").strip()
+                surname  = (n.get("name")     or "").strip()
+                name     = f"{forename} {surname}".strip() if forename else surname
+                if not name:
+                    continue
+
+                nationalities = n.get("nationalities") or []
+                country  = ", ".join(nationalities[:3])
+                dob      = (n.get("date_of_birth") or "").replace("/", "-")
+                entity_id = n.get("entity_id", "")
+                notice_url = (
+                    "https://www.interpol.int/en/How-we-work/Notices/"
+                    f"Red-Notices/View-Red-Notices{entity_id}"
+                )
+                charges = "; ".join(
+                    (w.get("charge") or w.get("charge_translation") or "")
+                    for w in (n.get("arrest_warrants") or [])
+                    if w.get("charge") or w.get("charge_translation")
+                )
+                details = json.dumps({
+                    "dob": dob,
+                    "nationalities": nationalities,
+                    "charges": charges,
+                    "notice_url": notice_url,
+                })
+                entries.append((
+                    "Interpol Red Notices", "individual", name, "",
+                    country, "Wanted / Red Notice", dob, details,
+                ))
+
+            total = data.get("total", 0)
+            print(f"[sync] Interpol page {page}: {len(entries)}/{total} collected")
+            if len(entries) >= total:
+                break
+            page += 1
+            time.sleep(0.5)  # be polite to Interpol's public API
+        except Exception as e:
+            print(f"[sync] Interpol page {page} error: {e}")
+            break
+
+    if entries:
+        _replace_list("Interpol Red Notices", entries)
+        _log("Interpol Red Notices", "ok", len(entries))
+        print(f"[sync] Interpol Red Notices: {len(entries):,} records")
+    else:
+        _log("Interpol Red Notices", "error", 0, "No records fetched")
+        print("[sync] Interpol Red Notices: no records (check API availability)")
+    return len(entries)
+
+
 # ─── PEP screening (OpenSanctions API) ───────────────────────────────────────
 
 def screen_pep(name):
@@ -493,13 +789,23 @@ def screen_pep(name):
 
 def run_full_sync():
     results = {}
-    results["ofac"]         = sync_ofac_sdn()
-    results["un"]           = sync_un_sc()
-    results["uk"]           = sync_uk_ofsi()
-    results["eu"]           = sync_eu()
-    results["world_bank"]   = sync_world_bank()
-    results["bis"]          = sync_bis_entity_list()
-    results["australia"]    = sync_australia_dfat()
+    # Core international sanctions lists
+    results["ofac"]              = sync_ofac_sdn()
+    results["ofac_consolidated"] = sync_ofac_consolidated()
+    results["un"]                = sync_un_sc()
+    results["uk"]                = sync_uk_ofsi()
+    results["eu"]                = sync_eu()
+    # Debarment / procurement
+    results["world_bank"]        = sync_world_bank()
+    # Export control
+    results["bis"]               = sync_bis_entity_list()
+    results["bis_dpl"]           = sync_bis_dpl()
+    results["bis_uvl"]           = sync_bis_uvl()
+    # Additional national lists
+    results["australia"]         = sync_australia_dfat()
+    results["canada"]            = sync_canada_gac()
+    # Law enforcement
+    results["interpol"]          = sync_interpol_red_notices()
     return results
 
 def get_sync_status():
