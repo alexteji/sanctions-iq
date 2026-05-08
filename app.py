@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 import requests
 import feedparser
 from dateutil import parser as date_parser
+from utils import fetch_feed
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", os.urandom(32).hex())
@@ -192,6 +193,15 @@ def init_db():
             message TEXT,
             synced_at TEXT DEFAULT (datetime('now'))
         );
+        CREATE INDEX IF NOT EXISTS idx_se_name      ON sanctions_entities(name);
+        CREATE INDEX IF NOT EXISTS idx_se_list      ON sanctions_entities(list_name);
+        CREATE INDEX IF NOT EXISTS idx_vh_vessel    ON vessel_hits(vessel_id);
+        CREATE INDEX IF NOT EXISTS idx_ah_aircraft  ON aircraft_hits(aircraft_id);
+        CREATE INDEX IF NOT EXISTS idx_mh_monitor   ON monitoring_hits(monitoring_id);
+        CREATE INDEX IF NOT EXISTS idx_nc_hash      ON news_cache(hash);
+        CREATE INDEX IF NOT EXISTS idx_vm_user      ON vessel_monitoring(user_id, active);
+        CREATE INDEX IF NOT EXISTS idx_am_user      ON aircraft_monitoring(user_id, active);
+        CREATE INDEX IF NOT EXISTS idx_ml_user      ON monitoring_list(user_id, active);
     """)
     _migrate_users(cur)
     _seed_demo_data(cur)
@@ -286,24 +296,35 @@ def _seed_sanctions_entities(cur):
 # ─── Background Tasks ────────────────────────────────────────────────────────
 
 NEWS_FEEDS = [
-    {"name": "Reuters Sanctions", "url": "https://feeds.reuters.com/reuters/businessNews"},
-    {"name": "OFAC Updates",      "url": "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/feed"},
-    {"name": "EU Sanctions News", "url": "https://www.consilium.europa.eu/en/policies/sanctions/rss/"},
+    {"name": "Reuters Sanctions",   "url": "https://feeds.reuters.com/reuters/businessNews"},
+    {"name": "OFAC Updates",        "url": "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/feed"},
+    {"name": "EU Sanctions News",   "url": "https://www.consilium.europa.eu/en/policies/sanctions/rss/"},
+    {"name": "UK OFSI Updates",     "url": "https://www.gov.uk/government/organisations/office-of-financial-sanctions-implementation.atom"},
+    {"name": "UN Sanctions",        "url": "https://news.un.org/feed/subscribe/en/news/topic/sanctions/feed/rss.xml"},
+    {"name": "BIS Export Control",  "url": "https://www.bis.doc.gov/index.php?format=feed&type=rss"},
+    {"name": "FATF Updates",        "url": "https://www.fatf-gafi.org/en/publications/Fatfgeneral/rss-feed.xml"},
 ]
 
 def _fetch_news():
-    """Pull RSS feeds and store in DB, dedup by hash."""
+    """Pull RSS/Atom feeds and store in DB, dedup by hash."""
     con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
-    keywords = ["sanction", "compliance", "ofac", "designation", "aml", "terror finance", "money laundering", "export control", "debarment"]
+    keywords = [
+        "sanction", "compliance", "ofac", "designation", "aml",
+        "terror finance", "money laundering", "export control",
+        "debarment", "asset freeze", "travel ban", "proliferation",
+        "embargo", "blacklist", "restricted party",
+    ]
     inserted = 0
     for feed_meta in NEWS_FEEDS:
-        try:
-            feed = feedparser.parse(feed_meta["url"])
-            for entry in feed.entries[:15]:
-                title = entry.get("title", "")
+        feed = fetch_feed(feed_meta["url"])  # uses requests with 15s timeout
+        if not feed:
+            continue
+        for entry in feed.entries[:20]:
+            try:
+                title   = entry.get("title", "")
                 summary = entry.get("summary", entry.get("description", ""))[:500]
-                url = entry.get("link", "")
+                url     = entry.get("link", "")
                 published = ""
                 if hasattr(entry, "published"):
                     try:
@@ -316,14 +337,15 @@ def _fetch_news():
                 h = hashlib.md5((title + url).encode()).hexdigest()
                 try:
                     cur.execute(
-                        "INSERT INTO news_cache(title,summary,source,url,published,hash) VALUES(?,?,?,?,?,?)",
-                        (title, summary, feed_meta["name"], url, published, h)
+                        "INSERT INTO news_cache(title,summary,source,url,published,hash)"
+                        " VALUES(?,?,?,?,?,?)",
+                        (title, summary, feed_meta["name"], url, published, h),
                     )
                     inserted += 1
                 except sqlite3.IntegrityError:
                     pass
-        except Exception:
-            pass
+            except Exception as exc:
+                print(f"[news] entry parse error ({feed_meta['name']}): {exc}")
     con.commit()
     con.close()
     return inserted

@@ -9,12 +9,16 @@ from datetime import datetime
 import feedparser
 import requests as _requests
 
+from utils import fetch_with_retry, fetch_feed
+
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "sanctions.db"))
 
 NEWS_SOURCES = [
     "https://feeds.reuters.com/reuters/businessNews",
     "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/feed",
     "https://www.consilium.europa.eu/en/policies/sanctions/rss/",
+    "https://www.gov.uk/government/organisations/office-of-financial-sanctions-implementation.atom",
+    "https://www.fatf-gafi.org/en/publications/Fatfgeneral/rss-feed.xml",
 ]
 
 # High-risk flag states (ISO 2-letter codes)
@@ -35,31 +39,62 @@ SANCTIONED_PORT_TERMS = [
 # ─── AIS position lookup ──────────────────────────────────────────────────────
 
 def get_vessel_position(mmsi):
-    """Fetch live position from MarineTraffic. Returns dict or None."""
-    api_key = os.getenv("MARINETRAFFIC_API_KEY", "")
-    if not api_key or not mmsi:
+    """Fetch live AIS position. Tries MarineTraffic first, falls back to VesselFinder."""
+    if not mmsi:
         return None
-    try:
-        resp = _requests.get(
-            f"https://services.marinetraffic.com/api/exportvessel/v:8/{api_key}"
-            f"/MMSI:{mmsi}/protocol:jsono",
-            timeout=10,
-        )
-        data = resp.json()
-        if data and isinstance(data, list) and data[0]:
-            v = data[0]
-            return {
-                "lat": v.get("LAT"), "lon": v.get("LON"),
-                "speed": v.get("SPEED"), "heading": v.get("HEADING"),
-                "status": v.get("STATUS"), "course": v.get("COURSE"),
-                "last_port": v.get("LAST_PORT"),
-                "destination": v.get("DESTINATION"),
-                "flag": v.get("FLAG"),
-                "draught": v.get("DRAUGHT"),
-                "timestamp": v.get("TIMESTAMP"),
-            }
-    except Exception:
-        pass
+
+    # ── Primary: MarineTraffic ────────────────────────────────────────────────
+    api_key = os.getenv("MARINETRAFFIC_API_KEY", "")
+    if api_key:
+        try:
+            resp = fetch_with_retry(
+                f"https://services.marinetraffic.com/api/exportvessel/v:8/{api_key}"
+                f"/MMSI:{mmsi}/protocol:jsono",
+                max_attempts=2, timeout=12,
+            )
+            data = resp.json()
+            if data and isinstance(data, list) and data[0]:
+                v = data[0]
+                return {
+                    "lat": v.get("LAT"), "lon": v.get("LON"),
+                    "speed": v.get("SPEED"), "heading": v.get("HEADING"),
+                    "status": v.get("STATUS"), "course": v.get("COURSE"),
+                    "last_port": v.get("LAST_PORT"),
+                    "destination": v.get("DESTINATION"),
+                    "flag": v.get("FLAG"),
+                    "draught": v.get("DRAUGHT"),
+                    "timestamp": v.get("TIMESTAMP"),
+                    "source": "MarineTraffic",
+                }
+        except Exception as exc:
+            print(f"[vessels] MarineTraffic error for {mmsi}: {exc}")
+
+    # ── Fallback: VesselFinder (requires VESSELFINDER_API_KEY) ────────────────
+    vf_key = os.getenv("VESSELFINDER_API_KEY", "")
+    if vf_key:
+        try:
+            resp = fetch_with_retry(
+                "https://api.vesselfinder.com/vessels",
+                params={"userkey": vf_key, "mmsi": mmsi},
+                max_attempts=2, timeout=12,
+            )
+            data = resp.json()
+            if data and isinstance(data, list) and data[0]:
+                v = data[0].get("AIS", {})
+                return {
+                    "lat": v.get("LATITUDE"), "lon": v.get("LONGITUDE"),
+                    "speed": v.get("SPEED"), "heading": v.get("HEADING"),
+                    "status": None, "course": v.get("COURSE"),
+                    "last_port": v.get("LAST_PORT"),
+                    "destination": v.get("DESTINATION"),
+                    "flag": v.get("FLAG"),
+                    "draught": v.get("DRAUGHT"),
+                    "timestamp": str(v.get("TIMESTAMP", "")),
+                    "source": "VesselFinder",
+                }
+        except Exception as exc:
+            print(f"[vessels] VesselFinder error for {mmsi}: {exc}")
+
     return None
 
 # ─── Core checker ─────────────────────────────────────────────────────────────
@@ -133,12 +168,14 @@ def check_vessel(vessel_id, name, imo=None, mmsi=None, flag=None):
 
     # 4. News feed
     for feed_url in NEWS_SOURCES:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:20]:
-                title = entry.get("title", "")
+        feed = fetch_feed(feed_url)
+        if not feed:
+            continue
+        for entry in feed.entries[:20]:
+            try:
+                title   = entry.get("title", "")
                 summary = entry.get("summary", entry.get("description", ""))[:600]
-                url = entry.get("link", "")
+                url     = entry.get("link", "")
                 combined = (title + " " + summary).lower()
                 if not all(w in combined for w in words):
                     continue
@@ -150,8 +187,8 @@ def check_vessel(vessel_id, name, imo=None, mmsi=None, flag=None):
                 }
                 if _is_new(h, "vessel_hits"):
                     new_hits.append(hit)
-        except Exception:
-            pass
+            except Exception as exc:
+                print(f"[vessels] news entry error: {exc}")
 
     return new_hits
 

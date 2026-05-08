@@ -2,10 +2,13 @@
 Live sanctions list sync + PEP screening.
 
 Sanctions sources (all free, no key needed):
-  OFAC SDN   — https://www.treasury.gov/ofac/downloads/sdn.xml
-  UN SC      — https://scsanctions.un.org/resources/xml/en/consolidated.xml
-  UK OFSI    — https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv
-  EU FSF     — https://webgate.ec.europa.eu/fsd/fsf/  (XML)
+  OFAC SDN        — https://www.treasury.gov/ofac/downloads/sdn.xml
+  UN SC           — https://scsanctions.un.org/resources/xml/en/consolidated.xml
+  UK OFSI         — https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv
+  EU FSF          — https://webgate.ec.europa.eu/fsd/fsf/  (XML)
+  World Bank      — https://finances.worldbank.org  (Socrata JSON API)
+  BIS Entity List — https://efts.bis.doc.gov  (CSV)
+  Australia DFAT  — https://www.dfat.gov.au  (XLSX, requires openpyxl)
 
 PEP screening:
   OpenSanctions API — https://api.opensanctions.org
@@ -24,14 +27,21 @@ from datetime import datetime
 
 import requests as _requests
 
+from utils import fetch_with_retry
+
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "sanctions.db"))
 
-OFAC_URL   = "https://www.treasury.gov/ofac/downloads/sdn.xml"
-UN_SC_URL  = "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
-UK_URL     = "https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv"
-EU_URL     = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
-              "xmlFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
-OS_API     = "https://api.opensanctions.org"
+OFAC_URL    = "https://www.treasury.gov/ofac/downloads/sdn.xml"
+UN_SC_URL   = "https://scsanctions.un.org/resources/xml/en/consolidated.xml"
+UK_URL      = "https://ofsistorage.blob.core.windows.net/publishlive/ConList.csv"
+EU_URL      = ("https://webgate.ec.europa.eu/fsd/fsf/public/files/"
+               "xmlFullSanctionsList_1_1/content?token=dG9rZW4tMjAxNw")
+OS_API      = "https://api.opensanctions.org"
+WB_URL      = "https://finances.worldbank.org/resource/ezgi-7imi.json?$limit=50000"
+BIS_URL     = ("https://efts.bis.doc.gov/complete-search-of-existing-actions"
+               "?format=csv&search%5B%5D=EL")
+AU_DFAT_URL = ("https://www.dfat.gov.au/sites/default/files/"
+               "australian-sanctions-consolidated-list.xlsx")
 
 # ─── Sync log helpers ─────────────────────────────────────────────────────────
 
@@ -73,8 +83,7 @@ def _replace_list(list_name, entries, also_delete=None):
 def sync_ofac_sdn():
     print("[sync] OFAC SDN …")
     try:
-        resp = _requests.get(OFAC_URL, timeout=120)
-        resp.raise_for_status()
+        resp = fetch_with_retry(OFAC_URL, timeout=120)
         root = ET.fromstring(resp.content)
 
         entries = []
@@ -126,8 +135,7 @@ def sync_ofac_sdn():
 def sync_un_sc():
     print("[sync] UN Security Council …")
     try:
-        resp = _requests.get(UN_SC_URL, timeout=60)
-        resp.raise_for_status()
+        resp = fetch_with_retry(UN_SC_URL, timeout=60)
         root = ET.fromstring(resp.content)
 
         entries = []
@@ -187,8 +195,7 @@ def sync_un_sc():
 def sync_uk_ofsi():
     print("[sync] UK OFSI …")
     try:
-        resp = _requests.get(UK_URL, timeout=60)
-        resp.raise_for_status()
+        resp = fetch_with_retry(UK_URL, timeout=60)
 
         content = resp.content.decode("utf-8-sig", errors="replace")
         reader  = csv.DictReader(io.StringIO(content))
@@ -238,8 +245,7 @@ def sync_uk_ofsi():
 def sync_eu():
     print("[sync] EU FSF …")
     try:
-        resp = _requests.get(EU_URL, timeout=90)
-        resp.raise_for_status()
+        resp = fetch_with_retry(EU_URL, timeout=90)
         root = ET.fromstring(resp.content)
 
         entries = []
@@ -283,6 +289,158 @@ def sync_eu():
         _log("EU Consolidated", "error", 0, str(e))
         print(f"[sync] EU error: {e}")
         return 0
+
+# ─── World Bank Debarment ─────────────────────────────────────────────────────
+
+def sync_world_bank():
+    """World Bank Listing of Ineligible Firms and Individuals (Socrata JSON API)."""
+    print("[sync] World Bank Debarment …")
+    try:
+        resp = fetch_with_retry(WB_URL, timeout=60)
+        rows = resp.json()
+        if not isinstance(rows, list):
+            raise ValueError(f"Unexpected response type: {type(rows)}")
+
+        entries = []
+        for row in rows:
+            name = (row.get("firmname") or row.get("firm_name") or "").strip()
+            if not name:
+                continue
+            country   = (row.get("country") or "").strip()
+            address   = (row.get("address") or "").strip()
+            from_date = (row.get("fromdate") or row.get("debarment_from_date") or "").strip()
+            to_date   = (row.get("todate") or row.get("debarment_to_date") or "").strip()
+            grounds   = (row.get("grounds") or row.get("ineligibility_status") or "Debarment").strip()
+            status    = (row.get("ineligibilitystatus") or row.get("ineligibility_status") or "").strip()
+            details   = json.dumps({
+                "address": address,
+                "to_date": to_date,
+                "status": status,
+                "grounds": grounds,
+            })
+            entries.append((
+                "World Bank Debarment", "entity", name, "", country,
+                "World Bank Debarment", from_date, details,
+            ))
+
+        _replace_list("World Bank Debarment", entries)
+        _log("World Bank Debarment", "ok", len(entries))
+        print(f"[sync] World Bank Debarment: {len(entries):,} records")
+        return len(entries)
+    except Exception as e:
+        _log("World Bank Debarment", "error", 0, str(e))
+        print(f"[sync] World Bank Debarment error: {e}")
+        return 0
+
+
+# ─── US BIS Entity List ───────────────────────────────────────────────────────
+
+def sync_bis_entity_list():
+    """US Bureau of Industry and Security Entity List (export control, free CSV)."""
+    print("[sync] BIS Entity List …")
+    try:
+        resp = fetch_with_retry(BIS_URL, timeout=60)
+        content = resp.content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(content))
+
+        def _col(row, *candidates):
+            for c in candidates:
+                v = row.get(c, "").strip()
+                if v and v not in ("-", "N/A"):
+                    return v
+            return ""
+
+        entries = []
+        for row in reader:
+            name = _col(row, "Name", "name")
+            if not name:
+                continue
+            country    = _col(row, "Country", "country")
+            city       = _col(row, "City", "city")
+            state      = _col(row, "State/Province", "State", "state")
+            eff_date   = _col(row, "Effective Date", "effective_date")
+            lic_req    = _col(row, "License Required", "license_required")
+            lic_policy = _col(row, "License Policy", "license_policy")
+            notes      = _col(row, "Country Group/ Notes", "Country Group/Notes", "notes")
+            details    = json.dumps({
+                "city": city, "state": state,
+                "license_required": lic_req,
+                "license_policy": lic_policy,
+                "notes": notes,
+            })
+            entries.append((
+                "BIS Entity List", "entity", name, "", country,
+                "US Export Control (EAR)", eff_date, details,
+            ))
+
+        _replace_list("BIS Entity List", entries)
+        _log("BIS Entity List", "ok", len(entries))
+        print(f"[sync] BIS Entity List: {len(entries):,} records")
+        return len(entries)
+    except Exception as e:
+        _log("BIS Entity List", "error", 0, str(e))
+        print(f"[sync] BIS Entity List error: {e}")
+        return 0
+
+
+# ─── Australia DFAT Consolidated Sanctions ───────────────────────────────────
+
+def sync_australia_dfat():
+    """Australia DFAT Consolidated Sanctions List (XLSX). Requires openpyxl."""
+    print("[sync] Australia DFAT …")
+    try:
+        import openpyxl  # optional dependency
+    except ImportError:
+        _log("Australia DFAT", "error", 0, "openpyxl not installed — run: pip install openpyxl")
+        print("[sync] Australia DFAT: openpyxl not installed")
+        return 0
+    try:
+        resp = fetch_with_retry(AU_DFAT_URL, timeout=90)
+        wb = openpyxl.load_workbook(io.BytesIO(resp.content), read_only=True, data_only=True)
+        ws = wb.active
+
+        headers = []
+        entries = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i == 0:
+                headers = [str(c).strip() if c else "" for c in row]
+                continue
+
+            def _get(key, *alts):
+                for k in (key, *alts):
+                    try:
+                        idx = next(j for j, h in enumerate(headers) if k.lower() in h.lower())
+                        v = row[idx]
+                        return str(v).strip() if v else ""
+                    except StopIteration:
+                        continue
+                return ""
+
+            name = _get("name", "full name", "entity name", "individual name")
+            if not name or name.lower() in ("none", ""):
+                continue
+
+            entity_type = "individual" if "individual" in _get("type").lower() else "entity"
+            country     = _get("nationality", "country", "address")
+            regime      = _get("regime", "sanction regime", "category")
+            listed_on   = _get("listed", "date", "listing date")
+            aliases_raw = _get("alias", "other names", "also known as")
+
+            entries.append((
+                "Australia DFAT", entity_type, name,
+                aliases_raw, country, regime, listed_on, "{}",
+            ))
+        wb.close()
+
+        _replace_list("Australia DFAT", entries)
+        _log("Australia DFAT", "ok", len(entries))
+        print(f"[sync] Australia DFAT: {len(entries):,} records")
+        return len(entries)
+    except Exception as e:
+        _log("Australia DFAT", "error", 0, str(e))
+        print(f"[sync] Australia DFAT error: {e}")
+        return 0
+
 
 # ─── PEP screening (OpenSanctions API) ───────────────────────────────────────
 
@@ -335,10 +493,13 @@ def screen_pep(name):
 
 def run_full_sync():
     results = {}
-    results["ofac"] = sync_ofac_sdn()
-    results["un"]   = sync_un_sc()
-    results["uk"]   = sync_uk_ofsi()
-    results["eu"]   = sync_eu()
+    results["ofac"]         = sync_ofac_sdn()
+    results["un"]           = sync_un_sc()
+    results["uk"]           = sync_uk_ofsi()
+    results["eu"]           = sync_eu()
+    results["world_bank"]   = sync_world_bank()
+    results["bis"]          = sync_bis_entity_list()
+    results["australia"]    = sync_australia_dfat()
     return results
 
 def get_sync_status():

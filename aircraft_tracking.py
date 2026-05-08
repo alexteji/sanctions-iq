@@ -9,12 +9,16 @@ from datetime import datetime
 import feedparser
 import requests as _requests
 
+from utils import fetch_with_retry, fetch_feed
+
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "sanctions.db"))
 
 NEWS_SOURCES = [
     "https://feeds.reuters.com/reuters/businessNews",
     "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/feed",
     "https://www.consilium.europa.eu/en/policies/sanctions/rss/",
+    "https://www.gov.uk/government/organisations/office-of-financial-sanctions-implementation.atom",
+    "https://www.fatf-gafi.org/en/publications/Fatfgeneral/rss-feed.xml",
 ]
 
 OPENSKY_BASE = "https://opensky-network.org/api"
@@ -34,44 +38,76 @@ NAV_STATUS = {
 # ─── OpenSky ADS-B lookup (free, no key) ─────────────────────────────────────
 
 def get_aircraft_position(icao24):
-    """Fetch live ADS-B state from OpenSky Network. Free, no API key needed."""
+    """Fetch live ADS-B state. Tries OpenSky first, falls back to ADS-B Exchange."""
     if not icao24:
         return None
+    icao = icao24.lower().strip()
+
+    # ── Primary: OpenSky Network (free, no key) ───────────────────────────────
     try:
-        resp = _requests.get(
+        resp = fetch_with_retry(
             f"{OPENSKY_BASE}/states/all",
-            params={"icao24": icao24.lower().strip()},
-            timeout=10,
+            params={"icao24": icao},
+            max_attempts=2, timeout=12,
         )
         data = resp.json()
         states = data.get("states") or []
-        if not states:
-            return None
-        s = states[0]
-        # OpenSky state vector fields (indices 0-16)
-        alt_m = s[7]
-        alt_ft = round(alt_m * 3.28084) if alt_m else None
-        speed_ms = s[9]
-        speed_kts = round(speed_ms * 1.94384) if speed_ms else None
-        return {
-            "icao24": s[0],
-            "callsign": (s[1] or "").strip(),
-            "origin_country": s[2],
-            "last_contact": s[4],
-            "longitude": s[5],
-            "latitude": s[6],
-            "altitude_ft": alt_ft,
-            "on_ground": s[8],
-            "speed_kts": speed_kts,
-            "heading": s[10],
-            "vertical_rate": s[11],
-            "squawk": s[14],
-            "timestamp": datetime.utcnow().isoformat(),
-            "source": "OpenSky Network",
-        }
-    except Exception:
-        pass
+        if states:
+            s = states[0]
+            alt_m     = s[7]
+            alt_ft    = round(alt_m * 3.28084) if alt_m else None
+            speed_ms  = s[9]
+            speed_kts = round(speed_ms * 1.94384) if speed_ms else None
+            return {
+                "icao24": s[0], "callsign": (s[1] or "").strip(),
+                "origin_country": s[2], "last_contact": s[4],
+                "longitude": s[5], "latitude": s[6],
+                "altitude_ft": alt_ft, "on_ground": s[8],
+                "speed_kts": speed_kts, "heading": s[10],
+                "vertical_rate": s[11], "squawk": s[14],
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "OpenSky Network",
+            }
+    except Exception as exc:
+        print(f"[aircraft] OpenSky error for {icao}: {exc}")
+
+    # ── Fallback: ADS-B Exchange rapid API (requires ADSBX_API_KEY) ──────────
+    adsbx_key = os.getenv("ADSBX_API_KEY", "")
+    if adsbx_key:
+        try:
+            resp = fetch_with_retry(
+                f"https://adsbexchange-com1.p.rapidapi.com/v2/icao/{icao}/",
+                headers={
+                    "X-RapidAPI-Key": adsbx_key,
+                    "X-RapidAPI-Host": "adsbexchange-com1.p.rapidapi.com",
+                },
+                max_attempts=2, timeout=12,
+            )
+            data = resp.json()
+            ac = (data.get("ac") or [None])[0]
+            if ac:
+                alt_ft    = ac.get("alt_baro")
+                speed_kts = ac.get("gs")
+                return {
+                    "icao24": ac.get("hex", icao),
+                    "callsign": (ac.get("flight") or "").strip(),
+                    "origin_country": ac.get("ownOp", ""),
+                    "last_contact": ac.get("seen", 0),
+                    "longitude": ac.get("lon"), "latitude": ac.get("lat"),
+                    "altitude_ft": int(alt_ft) if alt_ft and alt_ft != "ground" else None,
+                    "on_ground": alt_ft == "ground",
+                    "speed_kts": round(float(speed_kts)) if speed_kts else None,
+                    "heading": ac.get("track"),
+                    "vertical_rate": ac.get("baro_rate"),
+                    "squawk": ac.get("squawk"),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "ADS-B Exchange",
+                }
+        except Exception as exc:
+            print(f"[aircraft] ADS-B Exchange error for {icao}: {exc}")
+
     return None
+
 
 def get_recent_flight(icao24):
     """Get the most recent flight for an aircraft from OpenSky (free)."""
@@ -79,16 +115,16 @@ def get_recent_flight(icao24):
         return None
     try:
         now = int(time.time())
-        resp = _requests.get(
+        resp = fetch_with_retry(
             f"{OPENSKY_BASE}/flights/aircraft",
             params={"icao24": icao24.lower().strip(), "begin": now - 86400, "end": now},
-            timeout=10,
+            max_attempts=2, timeout=12,
         )
         flights = resp.json()
         if flights and isinstance(flights, list):
             return flights[-1]
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[aircraft] recent flight error for {icao24}: {exc}")
     return None
 
 # ─── Core checker ─────────────────────────────────────────────────────────────
@@ -158,12 +194,14 @@ def check_aircraft(aircraft_id, name, icao24=None, registration=None):
 
     # 3. News feed
     for feed_url in NEWS_SOURCES:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:20]:
-                title = entry.get("title", "")
+        feed = fetch_feed(feed_url)
+        if not feed:
+            continue
+        for entry in feed.entries[:20]:
+            try:
+                title   = entry.get("title", "")
                 summary = entry.get("summary", entry.get("description", ""))[:600]
-                url = entry.get("link", "")
+                url     = entry.get("link", "")
                 combined = (title + " " + summary).lower()
                 if not all(w in combined for w in words):
                     continue
@@ -175,8 +213,8 @@ def check_aircraft(aircraft_id, name, icao24=None, registration=None):
                 }
                 if _is_new(h, "aircraft_hits"):
                     new_hits.append(hit)
-        except Exception:
-            pass
+            except Exception as exc:
+                print(f"[aircraft] news entry error: {exc}")
 
     return new_hits
 

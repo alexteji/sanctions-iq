@@ -9,12 +9,16 @@ from datetime import datetime, timedelta
 import feedparser
 import requests as _requests
 
+from utils import fetch_feed
+
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "data", "sanctions.db"))
 
 NEWS_SOURCES = [
     "https://feeds.reuters.com/reuters/businessNews",
     "https://home.treasury.gov/policy-issues/financial-sanctions/recent-actions/feed",
     "https://www.consilium.europa.eu/en/policies/sanctions/rss/",
+    "https://www.gov.uk/government/organisations/office-of-financial-sanctions-implementation.atom",
+    "https://www.fatf-gafi.org/en/publications/Fatfgeneral/rss-feed.xml",
 ]
 
 # ─── Core checker ─────────────────────────────────────────────────────────────
@@ -57,12 +61,14 @@ def check_entity(entry_id, name):
 
     # 2. News feed search
     for feed_url in NEWS_SOURCES:
-        try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:20]:
-                title = entry.get("title", "")
+        feed = fetch_feed(feed_url)
+        if not feed:
+            continue
+        for entry in feed.entries[:20]:
+            try:
+                title   = entry.get("title", "")
                 summary = entry.get("summary", entry.get("description", ""))[:600]
-                url = entry.get("link", "")
+                url     = entry.get("link", "")
                 combined = (title + " " + summary).lower()
                 if not all(w in combined for w in words):
                     continue
@@ -78,8 +84,8 @@ def check_entity(entry_id, name):
                 }
                 if _is_new_hit(h):
                     new_hits.append(hit)
-        except Exception:
-            pass
+            except Exception as exc:
+                print(f"[monitoring] news entry error: {exc}")
 
     return new_hits
 
